@@ -9,14 +9,16 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 glam = { version = "0.29.2", features = ["bytemuck"] }
 anyhow = "1.0.95"
+bytemuck = { version = "1.21.0", features = ["derive"] }
 bytes = "1.9.0"
 console_error_panic_hook = "0.1.7"
 console_log = "1"
 env_logger = "0.11"
-reqwest = { version = "0.12.9", features = ["stream", "blocking"] }
+itertools = "0.13.0"
+reqwest = { version = "0.12.9", features = ["stream"] }
 geotiff = { git = "https://github.com/georust/geotiff", rev = "95172cb80e0eeb0bd6bb5409927aadef34464e9a" }
 pollster = "0.3"
-wgpu = { version = "23.0.1", features = ["webgl"] }
+wgpu = { version = "23.0.1" }
 wasm-bindgen = "0.2.99"
 wasm-bindgen-futures = "0.4.45"
 web-sys = "0.3.72"

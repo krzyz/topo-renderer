@@ -17,17 +17,15 @@
         }
 
         .root {
-            width: 380px; 
+            width: 1600px; 
             height: 100%;
             display: flex;
             flex-direction: column;
         }
         .main-canvas {
             margin: 0;
-            /* This allows the flexbox to grow to max size, this is needed for WebGPU */
-            flex: 1;
-            /* This forces CSS to ignore the width/height of the canvas, this is needed for WebGL */
-            contain: size;
+            width: 100%;
+            height: 100%;
         }
     </style>
 </head>

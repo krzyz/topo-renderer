@@ -1,3 +1,11 @@
+use glam::vec3;
+
+use crate::common::data::Size;
+
+use super::camera::Camera;
+
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
 pub struct Vertex {
     pub position: glam::Vec3,
     pub normal: glam::Vec3,
@@ -21,5 +29,67 @@ impl Vertex {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &Self::ATTRIBS,
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct Uniforms {
+    camera_proj: glam::Mat4,
+    normal_proj: glam::Mat4,
+    camera_pos: glam::Vec4,
+    pub lambda_phi_h: glam::Vec3,
+    _padding0: i32,
+}
+
+impl Uniforms {
+    pub fn new(camera: &Camera, bounds: Size<f32>, lambda_0: f32, phi_0: f32) -> Self {
+        let camera_proj = camera.build_view_proj_matrix(bounds.width, bounds.height);
+        let normal_proj = camera.build_view_normal_matrix();
+
+        let new_uniforms = Self {
+            camera_proj,
+            normal_proj,
+            camera_pos: camera.position(),
+            lambda_phi_h: vec3(lambda_0, phi_0, 500.0),
+            _padding0: 0,
+        };
+
+        new_uniforms
+    }
+
+    pub fn with_changed_bounds(&self, camera: &Camera, bounds: Size<f32>) -> Self {
+        let camera_proj = camera.build_view_proj_matrix(bounds.width, bounds.height);
+        let normal_proj = camera.build_view_normal_matrix();
+
+        Self {
+            camera_proj,
+            normal_proj,
+            camera_pos: camera.position(),
+            lambda_phi_h: self.lambda_phi_h,
+            _padding0: 0,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct PostprocessingUniforms {
+    viewport: [f32; 2],
+    pixelize_n: f32,
+    _padding: f32,
+}
+
+impl PostprocessingUniforms {
+    pub fn new(viewport: Size<f32>, pixelize_n: f32) -> Self {
+        Self {
+            viewport: [viewport.width, viewport.height],
+            pixelize_n,
+            _padding: 0.0,
+        }
+    }
+
+    pub fn with_new_viewport(&self, viewport: Size<f32>) -> Self {
+        PostprocessingUniforms::new(viewport, self.pixelize_n)
     }
 }

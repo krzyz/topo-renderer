@@ -1,144 +1,275 @@
-use std::borrow::Cow;
+pub mod common;
+pub mod render;
+
+use anyhow::Result;
+use bytes::Bytes;
+use geotiff::GeoTiff;
+use glam::Vec3;
+use render::{
+    camera::Camera,
+    data::{PostprocessingUniforms, Uniforms},
+    render_environment::{GeoTiffUpdate, RenderEnvironment},
+};
+use std::{
+    fs::File,
+    io::{Cursor, Read, Write},
+    iter,
+    path::PathBuf,
+};
 use wasm_bindgen::prelude::*;
 use winit::{
+    dpi::PhysicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::Window,
 };
 
-async fn run(event_loop: EventLoop<()>, window: Window) {
-    let mut size = window.inner_size();
-    size.width = size.width.max(1);
-    size.height = size.height.max(1);
+fn get_tiff_from_file() -> Result<Bytes> {
+    let mut test_tiff = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_tiff.push("resources/small.gtiff");
+    let mut file = File::open(test_tiff)?;
+    // read the same file back into a Vec of bytes
+    let mut buffer = Vec::<u8>::new();
 
-    let instance = wgpu::Instance::default();
+    file.read_to_end(&mut buffer)?;
 
-    let surface = instance.create_surface(&window).unwrap();
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            force_fallback_adapter: false,
-            // Request an adapter which can render to our surface
-            compatible_surface: Some(&surface),
-        })
-        .await
-        .expect("Failed to find an appropriate adapter");
+    Ok(buffer.into())
+}
 
-    // Create the logical device and command queue
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
-            },
-            None,
+pub async fn get_tiff_from_http() -> Result<Bytes> {
+    let api_key = "<snip>";
+
+    Ok(reqwest::get(format!("https://portal.opentopography.org/API/globaldem?demtype=NASADEM&south=49.106&north=49.38&west=19.66&east=20.2&outputFormat=GTiff&API_Key={api_key}"))
+        .await?.bytes().await?)
+}
+
+pub async fn write_tiff_from_http() -> Result<()> {
+    let tiff_bytes = get_tiff_from_http().await?;
+    let mut file = File::create("small.tiff")?;
+    file.write_all(&tiff_bytes)?;
+    Ok(())
+}
+
+struct State<'a> {
+    surface: wgpu::Surface<'a>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
+    camera: Camera,
+    gtiff: GeoTiff,
+    uniforms: Uniforms,
+    postprocessing_uniforms: PostprocessingUniforms,
+    render_environment: RenderEnvironment,
+    window: &'a Window,
+}
+
+impl<'a> State<'a> {
+    async fn new(window: &'a Window) -> State<'a> {
+        let size = window.inner_size();
+
+        // The instance is a handle to our GPU
+        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            #[cfg(not(target_arch = "wasm32"))]
+            backends: wgpu::Backends::PRIMARY,
+            #[cfg(target_arch = "wasm32")]
+            backends: wgpu::Backends::GL,
+            ..Default::default()
+        });
+        let surface = instance.create_surface(window).unwrap();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .unwrap();
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    memory_hints: Default::default(),
+                },
+                // Some(&std::path::Path::new("trace")), // Trace path
+                None, // Trace path
+            )
+            .await
+            .unwrap();
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
+        // one will result all the colors comming out darker. If you want to support non
+        // Srgb surfaces, you'll need to account for that when drawing to the frame.
+        let surface_format = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_caps.formats[0]);
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: size.width,
+            height: size.height,
+            present_mode: surface_caps.present_modes[0],
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+
+        let mut camera = Camera::default();
+        camera.set_eye(Vec3::new(10000.0, 5000.0, 10000.0));
+
+        let gtiff;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            gtiff = GeoTiff::read(Cursor::new(get_tiff_from_file().unwrap().as_ref())).unwrap();
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            gtiff =
+                GeoTiff::read(Cursor::new(get_tiff_from_http().await.unwrap().as_ref())).unwrap();
+        }
+
+        let pixelize_n = 100.0;
+        let center_coord = gtiff.model_extent().center();
+        let bounds = (size.width as f32, size.height as f32).into();
+        let uniforms = Uniforms::new(
+            &camera,
+            bounds,
+            center_coord.x as f32,
+            center_coord.y as f32,
+        );
+        let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
+
+        log::warn!("Creating render_environment, size: {size:#?}");
+        let render_environment = RenderEnvironment::new(&device, surface_format, size.into());
+        log::warn!("Created render_environment");
+
+        Self {
+            surface,
+            device,
+            queue,
+            config,
+            size,
+            camera,
+            gtiff,
+            uniforms,
+            postprocessing_uniforms,
+            render_environment,
+            window,
+        }
+    }
+
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+
+    fn update_size(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.size = new_size;
+        let bounds = (new_size.width as f32, new_size.height as f32).into();
+        self.uniforms = self.uniforms.with_changed_bounds(&self.camera, bounds);
+        self.postprocessing_uniforms = self.postprocessing_uniforms.with_new_viewport(bounds);
+    }
+
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.update_size(new_size);
+            self.surface.configure(&self.device, &self.config);
+            self.render_environment.update(
+                &self.device,
+                &self.queue,
+                new_size.into(),
+                GeoTiffUpdate::Old(&self.gtiff),
+                &self.uniforms,
+                &self.postprocessing_uniforms,
+            );
+        }
+    }
+
+    fn update(&mut self) {
+        self.render_environment.update(
+            &self.device,
+            &self.queue,
+            self.size.into(),
+            GeoTiffUpdate::Old(&self.gtiff),
+            &self.uniforms,
+            &self.postprocessing_uniforms,
         )
-        .await
-        .expect("Failed to create device");
+    }
 
-    // Load the shaders from disk
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
-    });
+    fn render(&mut self) -> std::result::Result<(), wgpu::SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
-    let swapchain_capabilities = surface.get_capabilities(&adapter);
-    let swapchain_format = swapchain_capabilities.formats[0];
+        self.render_environment
+            .render(&view, &mut encoder, self.size.into());
 
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: None,
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[],
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(swapchain_format.into())],
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
+        self.queue.submit(iter::once(encoder.finish()));
+        output.present();
 
-    let mut config = surface
-        .get_default_config(&adapter, size.width, size.height)
-        .unwrap();
-    surface.configure(&device, &config);
+        Ok(())
+    }
+}
 
-    let window = &window;
+async fn run(event_loop: EventLoop<()>, window: Window) {
+    let mut state = State::new(&window).await;
+    let mut surface_configured = false;
+
     event_loop
-        .run(move |event, target| {
-            // Have the closure take ownership of the resources.
-            // `event_loop.run` never returns, therefore we must do this to ensure
-            // the resources are properly cleaned up.
-            let _ = (&instance, &adapter, &shader, &pipeline_layout);
-
+        .run(move |event, control_flow| {
             if let Event::WindowEvent {
                 window_id: _,
                 event,
             } = event
             {
                 match event {
-                    WindowEvent::Resized(new_size) => {
-                        // Reconfigure the surface with the new size
-                        config.width = new_size.width.max(1);
-                        config.height = new_size.height.max(1);
-                        surface.configure(&device, &config);
+                    WindowEvent::Resized(physical_size) => {
+                        surface_configured = true;
+                        state.resize(physical_size);
                         // On macos the window needs to be redrawn manually after resizing
-                        window.request_redraw();
+                        state.window().request_redraw();
                     }
                     WindowEvent::RedrawRequested => {
-                        let frame = surface
-                            .get_current_texture()
-                            .expect("Failed to acquire next swap chain texture");
-                        let view = frame
-                            .texture
-                            .create_view(&wgpu::TextureViewDescriptor::default());
-                        let mut encoder =
-                            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                                label: None,
-                            });
-                        {
-                            let mut rpass =
-                                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                    label: None,
-                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                        view: &view,
-                                        resolve_target: None,
-                                        ops: wgpu::Operations {
-                                            load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                                            store: wgpu::StoreOp::Store,
-                                        },
-                                    })],
-                                    depth_stencil_attachment: None,
-                                    timestamp_writes: None,
-                                    occlusion_query_set: None,
-                                });
-                            rpass.set_pipeline(&render_pipeline);
-                            rpass.draw(0..3, 0..1);
-                        }
+                        state.window().request_redraw();
 
-                        queue.submit(Some(encoder.finish()));
-                        frame.present();
+                        if !surface_configured {
+                            return;
+                        }
+                        state.update();
+                        match state.render() {
+                            Ok(_) => {}
+                            // Reconfigure the surface if it's lost or outdated
+                            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                                state.resize(state.size)
+                            }
+                            // The system is out of memory, we should probably quit
+                            Err(wgpu::SurfaceError::OutOfMemory) => {
+                                log::error!("OutOfMemory");
+                                control_flow.exit();
+                            }
+
+                            // This happens when the a frame takes too long to present
+                            Err(wgpu::SurfaceError::Timeout) => {
+                                log::warn!("Surface timeout")
+                            }
+                        }
                     }
-                    WindowEvent::CloseRequested => target.exit(),
+                    WindowEvent::CloseRequested => control_flow.exit(),
                     _ => {}
                 };
             }
@@ -176,7 +307,6 @@ pub fn start() {
     {
         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
         console_log::init().expect("could not initialize logger");
-        log::info!("starting");
         wasm_bindgen_futures::spawn_local(run(event_loop, window));
     }
 }

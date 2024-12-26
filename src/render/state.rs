@@ -63,20 +63,16 @@ impl<'a> State<'a> {
         // Shader code in this tutorial assumes an Srgb surface texture. Using a different
         // one will result all the colors comming out darker. If you want to support non
         // Srgb surfaces, you'll need to account for that when drawing to the frame.
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
+        let format = surface_caps.formats[0];
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
+            format,
             width: size.width,
             height: size.height,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: vec![format.add_srgb_suffix()],
             desired_maximum_frame_latency: 2,
         };
 
@@ -97,7 +93,8 @@ impl<'a> State<'a> {
         let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
 
         log::warn!("Creating render_environment, size: {size:#?}");
-        let render_environment = RenderEnvironment::new(&device, surface_format, size.into());
+        let render_environment =
+            RenderEnvironment::new(&device, format.add_srgb_suffix(), size.into());
         log::warn!("Created render_environment");
 
         Self {
@@ -160,9 +157,10 @@ impl<'a> State<'a> {
 
     pub fn render(&mut self) -> std::result::Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.config.format.add_srgb_suffix()),
+            ..Default::default()
+        });
 
         let mut encoder = self
             .device

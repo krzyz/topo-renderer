@@ -53,7 +53,9 @@ fn vs_main(
 
     let view_normal = uniforms.normal_projection * vec4<f32>(model.normal, 1.0);
 
-    out.color = 0.5 * (normalize(view_normal.xzy) + vec3<f32>(1.0));
+    // power to 2.2 so that it looks like linear RGB in sRGB texture surface
+    out.color = pow(0.5 * (normalize(view_normal.xzy) + vec3<f32>(1.0)), vec3<f32>(2.2));
+
 
     out.clip_position = uniforms.projection * vec4<f32>(position, 1.0);
     return out;

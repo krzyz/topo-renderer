@@ -12,28 +12,23 @@ use render::{
 };
 use std::{
     fs::File,
-    io::{Cursor, Read, Write},
+    io::{Cursor, Write},
     iter,
-    path::PathBuf,
 };
 use wasm_bindgen::prelude::*;
 use winit::{
-    dpi::PhysicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::Window,
 };
 
 fn get_tiff_from_file() -> Result<Bytes> {
-    let mut test_tiff = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    test_tiff.push("resources/small.gtiff");
-    let mut file = File::open(test_tiff)?;
-    // read the same file back into a Vec of bytes
-    let mut buffer = Vec::<u8>::new();
+    let buffer = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/small.gtiff"
+    ));
 
-    file.read_to_end(&mut buffer)?;
-
-    Ok(buffer.into())
+    Ok(Bytes::from(buffer.as_slice()))
 }
 
 pub async fn get_tiff_from_http() -> Result<Bytes> {
@@ -124,16 +119,7 @@ impl<'a> State<'a> {
         let mut camera = Camera::default();
         camera.set_eye(Vec3::new(10000.0, 5000.0, 10000.0));
 
-        let gtiff;
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            gtiff = GeoTiff::read(Cursor::new(get_tiff_from_file().unwrap().as_ref())).unwrap();
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            gtiff =
-                GeoTiff::read(Cursor::new(get_tiff_from_http().await.unwrap().as_ref())).unwrap();
-        }
+        let gtiff = GeoTiff::read(Cursor::new(get_tiff_from_file().unwrap().as_ref())).unwrap();
 
         let pixelize_n = 100.0;
         let center_coord = gtiff.model_extent().center();

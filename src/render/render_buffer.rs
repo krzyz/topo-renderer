@@ -1,5 +1,5 @@
 use geotiff::GeoTiff;
-use itertools::iproduct;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{buffer::Buffer, data::Vertex};
 
@@ -103,9 +103,8 @@ impl RenderBuffer {
 
         let geotiff_min = geotiff.model_extent().min();
 
-        let mut vertices = iproduct!(0..raster_width, 0..raster_height)
-            .into_iter()
-            .map(|(row, col)| {
+        let mut vertices = //iproduct!(0..raster_width, 0..raster_height)
+            (0..raster_width).into_par_iter().flat_map(|row| (0..raster_height).into_iter().map(|col| {
                 let lambda = (0.5 + row as f64) * dx;
                 let phi = (0.5 + col as f64) * dy;
                 let coord = geotiff_min + (lambda, phi).into();
@@ -114,7 +113,7 @@ impl RenderBuffer {
                 ));
                 let position = glam::vec3(coord.x as f32, height, coord.y as f32);
                 Vertex::new(position, glam::Vec3::ZERO)
-            })
+            }).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
         let indices = Self::generate_indices(raster_width, raster_height);

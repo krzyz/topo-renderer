@@ -18,6 +18,8 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
+    @location(1) world_position: vec3<f32>,
+    @location(2) world_normal: vec3<f32>,
 }
 
 fn transform(h: f32, lambda_deg: f32, phi_deg: f32, lambda_0_deg: f32, phi_0_deg: f32) -> vec3<f32> {
@@ -49,13 +51,13 @@ fn vs_main(
     let lambda = model.position.x;
     let phi = model.position.z;
 
-    let position = transform(model.position.y, lambda, phi, lambda_0, phi_0);
+    let position = transform(model.position.y - height, lambda, phi, lambda_0, phi_0);
 
     let view_normal = uniforms.normal_projection * vec4<f32>(model.normal, 1.0);
 
-    // power to 2.2 so that it looks like linear RGB in sRGB texture surface
-    out.color = pow(0.5 * (normalize(view_normal.xzy) + vec3<f32>(1.0)), vec3<f32>(2.2));
-
+    out.color = vec3<f32>(1.0, 1.0, 1.0);
+    out.world_position = position;
+    out.world_normal = 0.5 * (normalize(view_normal.xzy) + vec3<f32>(1.0));
 
     out.clip_position = uniforms.projection * vec4<f32>(position, 1.0);
     return out;
@@ -63,5 +65,18 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color, 1.0);
+    let ambient_strength = 0.1;
+    let light_color = vec3<f32>(1.0, 1.0, 1.0);
+    let light_position = vec3<f32>(100000.0, 1000000.0, 150000.0);
+
+    let light_dir = normalize(light_position - in.world_position);
+
+    let diffuse_strength = 0.7 * max(dot(in.world_normal, light_dir), 0.0);
+    let diffuse_color = light_color * diffuse_strength;
+
+
+    let ambient_color = light_color * ambient_strength;
+    let result = (ambient_color + diffuse_color) * in.color;
+
+    return vec4<f32>(result, 1.0);
 }

@@ -131,8 +131,8 @@ impl RenderEnvironment {
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
                                 r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
+                                g: 0.71,
+                                b: 0.885,
                                 a: 1.0,
                             }),
                             store: wgpu::StoreOp::Store,

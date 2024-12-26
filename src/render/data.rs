@@ -43,7 +43,7 @@ pub struct Uniforms {
 }
 
 impl Uniforms {
-    pub fn new(camera: &Camera, bounds: Size<f32>, lambda_0: f32, phi_0: f32) -> Self {
+    pub fn new(camera: &Camera, bounds: Size<f32>, lambda_0: f32, phi_0: f32, h: f32) -> Self {
         let camera_proj = camera.build_view_proj_matrix(bounds.width, bounds.height);
         let normal_proj = camera.build_view_normal_matrix();
 
@@ -51,14 +51,14 @@ impl Uniforms {
             camera_proj,
             normal_proj,
             camera_pos: camera.position(),
-            lambda_phi_h: vec3(lambda_0, phi_0, 500.0),
+            lambda_phi_h: vec3(lambda_0, phi_0, h),
             _padding0: 0,
         };
 
         new_uniforms
     }
 
-    pub fn with_changed_bounds(&self, camera: &Camera, bounds: Size<f32>) -> Self {
+    pub fn update_projection(&self, camera: &Camera, bounds: Size<f32>) -> Self {
         let camera_proj = camera.build_view_proj_matrix(bounds.width, bounds.height);
         let normal_proj = camera.build_view_normal_matrix();
 

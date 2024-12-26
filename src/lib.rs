@@ -43,44 +43,46 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .run(move |event, control_flow| {
             if let Event::WindowEvent {
                 window_id: _,
-                event,
+                ref event,
             } = event
             {
-                match event {
-                    WindowEvent::Resized(physical_size) => {
-                        surface_configured = true;
-                        state.resize(physical_size);
-                        // On macos the window needs to be redrawn manually after resizing
-                        state.window().request_redraw();
-                    }
-                    WindowEvent::RedrawRequested => {
-                        state.window().request_redraw();
-
-                        if !surface_configured {
-                            return;
+                if !state.input(event) {
+                    match event {
+                        WindowEvent::Resized(physical_size) => {
+                            surface_configured = true;
+                            state.resize(*physical_size);
+                            // On macos the window needs to be redrawn manually after resizing
+                            state.window().request_redraw();
                         }
-                        state.update();
-                        match state.render() {
-                            Ok(_) => {}
-                            // Reconfigure the surface if it's lost or outdated
-                            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                state.resize(state.size())
-                            }
-                            // The system is out of memory, we should probably quit
-                            Err(wgpu::SurfaceError::OutOfMemory) => {
-                                log::error!("OutOfMemory");
-                                control_flow.exit();
-                            }
+                        WindowEvent::RedrawRequested => {
+                            state.window().request_redraw();
 
-                            // This happens when the a frame takes too long to present
-                            Err(wgpu::SurfaceError::Timeout) => {
-                                log::warn!("Surface timeout")
+                            if !surface_configured {
+                                return;
+                            }
+                            state.update();
+                            match state.render() {
+                                Ok(_) => {}
+                                // Reconfigure the surface if it's lost or outdated
+                                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                                    state.resize(state.size())
+                                }
+                                // The system is out of memory, we should probably quit
+                                Err(wgpu::SurfaceError::OutOfMemory) => {
+                                    log::error!("OutOfMemory");
+                                    control_flow.exit();
+                                }
+
+                                // This happens when the a frame takes too long to present
+                                Err(wgpu::SurfaceError::Timeout) => {
+                                    log::warn!("Surface timeout")
+                                }
                             }
                         }
-                    }
-                    WindowEvent::CloseRequested => control_flow.exit(),
-                    _ => {}
-                };
+                        WindowEvent::CloseRequested => control_flow.exit(),
+                        _ => {}
+                    };
+                }
             }
         })
         .unwrap();

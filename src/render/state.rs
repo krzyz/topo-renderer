@@ -6,6 +6,7 @@ use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
 use geotiff::GeoTiff;
 use glam::Vec3;
 use std::f32::consts::PI;
+use std::time::{Duration, Instant};
 use std::{io::Cursor, iter};
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -68,18 +69,19 @@ impl CameraController {
         }
     }
 
-    fn update_camera(&self, camera: &mut Camera) {
+    fn update_camera(&self, camera: &mut Camera, time_delta: Duration) {
+        let increment = self.speed * 0.0001 * time_delta.as_micros() as f32;
         if self.is_up_pressed {
-            camera.set_fovy(camera.fov_y() - self.speed);
+            camera.set_fovy(camera.fov_y() - increment);
         }
         if self.is_down_pressed {
-            camera.set_fovy(camera.fov_y() + self.speed);
+            camera.set_fovy(camera.fov_y() + increment);
         }
         if self.is_right_pressed {
-            camera.rotate(-self.speed);
+            camera.rotate(-increment);
         }
         if self.is_left_pressed {
-            camera.rotate(self.speed);
+            camera.rotate(increment);
         }
     }
 }
@@ -97,6 +99,7 @@ pub struct State<'a> {
     postprocessing_uniforms: PostprocessingUniforms,
     render_environment: RenderEnvironment,
     window: &'a Window,
+    prev_instant: Instant,
 }
 
 impl<'a> State<'a> {
@@ -170,10 +173,10 @@ impl<'a> State<'a> {
         let uniforms = Uniforms::new(&camera, bounds, lambda_0 as f32, phi_0 as f32, h);
         let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
 
-        log::warn!("Creating render_environment, size: {size:#?}");
         let render_environment =
             RenderEnvironment::new(&device, format.add_srgb_suffix(), size.into());
-        log::warn!("Created render_environment");
+
+        let prev_instant = Instant::now();
 
         Self {
             surface,
@@ -188,6 +191,7 @@ impl<'a> State<'a> {
             postprocessing_uniforms,
             render_environment,
             window,
+            prev_instant,
         }
     }
 
@@ -224,9 +228,15 @@ impl<'a> State<'a> {
     }
 
     pub fn update(&mut self) {
+        let current_instant = Instant::now();
+        let time_delta = current_instant - self.prev_instant;
+        println!("duration: {time_delta:#?}");
+        self.prev_instant = current_instant;
+
         let bounds = (self.size.width as f32, self.size.height as f32).into();
         self.uniforms = self.uniforms.update_projection(&self.camera, bounds);
-        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_controller
+            .update_camera(&mut self.camera, time_delta);
         self.render_environment.update(
             &self.device,
             &self.queue,

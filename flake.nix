@@ -20,31 +20,18 @@
     in
     {
       devShells.${system}.default = pkgs.mkShell {
-        buildInputs =
-          [
-            (pkgs.python3.withPackages (
-              python-pkgs: with python-pkgs; [
-                jupyter
-                ipython
-                polars
-                numpy
-                matplotlib
-              ]
-            ))
-          ]
-          ++ (with pkgs; [
-            openssl
-            pkg-config
-            gdal
-            dbus
-            udev
-            libxkbcommon
-            vulkan-tools
-            vulkan-headers
-            vulkan-loader
-            vulkan-validation-layers
-            wayland
-          ]);
+        buildInputs = with pkgs; [
+          openssl
+          pkg-config
+          dbus
+          udev
+          libxkbcommon
+          vulkan-tools
+          vulkan-headers
+          vulkan-loader
+          vulkan-validation-layers
+          wayland
+        ];
 
         packages =
           [ toolchain ]
@@ -61,7 +48,6 @@
           with pkgs;
           lib.makeLibraryPath [
             openssl
-            gdal
             udev
             vulkan-loader
             libxkbcommon
@@ -70,6 +56,7 @@
         }";
 
         AMD_VULKAN_ICD = "RADV";
+        WGPU_BACKEND = "vulkan";
 
         shellHook = ''
           export PATH="$PATH:$HOME/.cargo/bin"

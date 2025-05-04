@@ -5,6 +5,7 @@ use super::data::{PostprocessingUniforms, Uniforms};
 use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
 use geotiff::GeoTiff;
 use glam::Vec3;
+use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::time::{Duration, Instant};
 use std::{io::Cursor, iter};
@@ -13,12 +14,17 @@ use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 
+enum CameraControllerEvent {
+    ToggleViewMode,
+}
+
 struct CameraController {
     speed: f32,
     is_up_pressed: bool,
     is_down_pressed: bool,
     is_left_pressed: bool,
     is_right_pressed: bool,
+    events_to_process: VecDeque<CameraControllerEvent>,
 }
 
 impl CameraController {
@@ -29,6 +35,7 @@ impl CameraController {
             is_down_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
+            events_to_process: VecDeque::default(),
         }
     }
 
@@ -62,6 +69,11 @@ impl CameraController {
                         self.is_right_pressed = is_pressed;
                         true
                     }
+                    KeyCode::KeyF if is_pressed => {
+                        self.events_to_process
+                            .push_front(CameraControllerEvent::ToggleViewMode);
+                        true
+                    }
                     _ => false,
                 }
             }
@@ -69,7 +81,7 @@ impl CameraController {
         }
     }
 
-    fn update_camera(&self, camera: &mut Camera, time_delta: Duration) {
+    fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) {
         let increment = self.speed * 0.0001 * time_delta.as_micros() as f32;
         if self.is_up_pressed {
             camera.set_fovy(camera.fov_y() - increment);
@@ -83,6 +95,13 @@ impl CameraController {
         if self.is_left_pressed {
             camera.rotate(increment);
         }
+        self.events_to_process
+            .drain(..)
+            .for_each(|event| match event {
+                CameraControllerEvent::ToggleViewMode => {
+                    camera.view_mode = camera.view_mode.toggle();
+                }
+            });
     }
 }
 

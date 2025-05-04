@@ -39,20 +39,21 @@ pub struct Uniforms {
     normal_proj: glam::Mat4,
     camera_pos: glam::Vec4,
     pub lambda_phi_h: glam::Vec3,
-    _padding0: i32,
+    pub view_mode: i32,
 }
 
 impl Uniforms {
     pub fn new(camera: &Camera, bounds: Size<f32>, lambda_0: f32, phi_0: f32, h: f32) -> Self {
         let camera_proj = camera.build_view_proj_matrix(bounds.width, bounds.height);
         let normal_proj = camera.build_view_normal_matrix();
+        let view_mode = camera.view_mode as i32;
 
         let new_uniforms = Self {
             camera_proj,
             normal_proj,
             camera_pos: camera.position(),
             lambda_phi_h: vec3(lambda_0, phi_0, h),
-            _padding0: 0,
+            view_mode,
         };
 
         new_uniforms
@@ -67,7 +68,7 @@ impl Uniforms {
             normal_proj,
             camera_pos: camera.position(),
             lambda_phi_h: self.lambda_phi_h,
-            _padding0: 0,
+            view_mode: camera.view_mode as i32,
         }
     }
 }

@@ -1,6 +1,25 @@
 use glam::{mat4, vec3, vec4, Vec3};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Default)]
+pub enum ViewMode {
+    #[default]
+    Default = 0,
+    Normals = 1,
+    Position = 2,
+}
+
+impl ViewMode {
+    pub fn toggle(&self) -> ViewMode {
+        use ViewMode::*;
+        match self {
+            Default => Normals,
+            Normals => Position,
+            Position => Default,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 pub struct Camera {
     eye: glam::Vec3,
     direction: f32,
@@ -8,6 +27,7 @@ pub struct Camera {
     fov_y: f32,
     near: f32,
     far: f32,
+    pub view_mode: ViewMode,
 }
 
 impl Default for Camera {
@@ -19,6 +39,7 @@ impl Default for Camera {
             fov_y: 45.0,
             near: 10.0,
             far: 1000000.0,
+            view_mode: ViewMode::default(),
         }
     }
 }

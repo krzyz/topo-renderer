@@ -41,6 +41,13 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 
     event_loop
         .run(move |event, control_flow| {
+            if let Event::DeviceEvent {
+                device_id: _,
+                ref event,
+            } = event
+            {
+                state.device_input(event);
+            }
             if let Event::WindowEvent {
                 window_id: _,
                 ref event,

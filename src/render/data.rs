@@ -40,6 +40,8 @@ pub struct Uniforms {
     camera_pos: glam::Vec4,
     pub lambda_phi_h: glam::Vec3,
     pub view_mode: i32,
+    pub sun_direction: glam::Vec3,
+    padding: i32,
 }
 
 impl Uniforms {
@@ -54,6 +56,8 @@ impl Uniforms {
             camera_pos: camera.position(),
             lambda_phi_h: vec3(lambda_0, phi_0, h),
             view_mode,
+            sun_direction: camera.sun_angle.to_vec3(),
+            padding: 0,
         };
 
         new_uniforms
@@ -69,6 +73,8 @@ impl Uniforms {
             camera_pos: camera.position(),
             lambda_phi_h: self.lambda_phi_h,
             view_mode: camera.view_mode as i32,
+            sun_direction: camera.sun_angle.to_vec3(),
+            padding: 0,
         }
     }
 }

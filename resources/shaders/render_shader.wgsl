@@ -7,6 +7,7 @@ struct Uniforms {
     camera_pos: vec4<f32>,
     lambda_phi_h: vec3<f32>,
     view_mode: i32,
+    sun_direction: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -70,9 +71,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let light_color = vec3<f32>(1.0, 1.0, 1.0);
     let light_position = vec3<f32>(100000.0, 1000000.0, 150000.0);
 
-    let light_dir = normalize(light_position - in.world_position);
-
-    let diffuse_strength = 0.7 * max(dot(in.world_normal, light_dir), 0.0);
+    let diffuse_strength = 0.7 * max(dot(in.world_normal, uniforms.sun_direction), 0.0);
     let diffuse_color = light_color * diffuse_strength;
 
 
@@ -82,7 +81,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if uniforms.view_mode == 1 {
         return vec4<f32>(in.world_normal, 1.0);
     } else if uniforms.view_mode == 2 {
-        return vec4<f32>(light_dir, 1.0);
+        return vec4<f32>(uniforms.sun_direction, 1.0);
     } else {
         return vec4<f32>(result, 1.0);
     }

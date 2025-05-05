@@ -10,7 +10,7 @@ use std::f32::consts::PI;
 use std::time::{Duration, Instant};
 use std::{io::Cursor, iter};
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 
@@ -24,6 +24,7 @@ struct CameraController {
     is_down_pressed: bool,
     is_left_pressed: bool,
     is_right_pressed: bool,
+    mouse_total_delta: (f32, f32),
     events_to_process: VecDeque<CameraControllerEvent>,
 }
 
@@ -35,6 +36,7 @@ impl CameraController {
             is_down_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
+            mouse_total_delta: (0.0, 0.0),
             events_to_process: VecDeque::default(),
         }
     }
@@ -81,6 +83,16 @@ impl CameraController {
         }
     }
 
+    fn process_device_events(&mut self, event: &DeviceEvent) {
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                self.mouse_total_delta.0 += delta.0 as f32;
+                self.mouse_total_delta.1 += delta.1 as f32;
+            }
+            _ => {}
+        }
+    }
+
     fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) {
         let increment = self.speed * 0.0001 * time_delta.as_micros() as f32;
         if self.is_up_pressed {
@@ -95,6 +107,11 @@ impl CameraController {
         if self.is_left_pressed {
             camera.rotate(increment);
         }
+        camera.sun_angle.theta += self.mouse_total_delta.0;
+        camera.sun_angle.phi += self.mouse_total_delta.1;
+
+        self.mouse_total_delta = (0.0, 0.0);
+
         self.events_to_process
             .drain(..)
             .for_each(|event| match event {
@@ -249,7 +266,6 @@ impl<'a> State<'a> {
     pub fn update(&mut self) {
         let current_instant = Instant::now();
         let time_delta = current_instant - self.prev_instant;
-        println!("duration: {time_delta:#?}");
         self.prev_instant = current_instant;
 
         let bounds = (self.size.width as f32, self.size.height as f32).into();
@@ -290,5 +306,9 @@ impl<'a> State<'a> {
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         self.camera_controller.process_events(event)
+    }
+
+    pub fn device_input(&mut self, event: &DeviceEvent) {
+        self.camera_controller.process_device_events(event)
     }
 }

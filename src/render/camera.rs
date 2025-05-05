@@ -1,4 +1,5 @@
 use glam::{mat4, vec3, vec4, Vec3};
+use std::f32::consts::PI;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub enum ViewMode {
@@ -19,6 +20,26 @@ impl ViewMode {
     }
 }
 
+// degrees
+#[derive(Copy, Clone, Debug, Default)]
+pub struct LightAngle {
+    // 0 is down, around X
+    pub theta: f32,
+    // 0 is in direction of x, around Y
+    pub phi: f32,
+}
+
+impl LightAngle {
+    pub fn to_vec3(&self) -> glam::Vec3 {
+        glam::Mat3::from_euler(
+            glam::EulerRot::XYZEx,
+            PI * self.theta / 180.0,
+            PI * self.phi / 180.0,
+            0.0,
+        ) * glam::Vec3::Z
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Camera {
     eye: glam::Vec3,
@@ -28,6 +49,7 @@ pub struct Camera {
     near: f32,
     far: f32,
     pub view_mode: ViewMode,
+    pub sun_angle: LightAngle,
 }
 
 impl Default for Camera {
@@ -40,6 +62,10 @@ impl Default for Camera {
             near: 10.0,
             far: 1000000.0,
             view_mode: ViewMode::default(),
+            sun_angle: LightAngle {
+                theta: 45.0,
+                phi: 0.0,
+            },
         }
     }
 }

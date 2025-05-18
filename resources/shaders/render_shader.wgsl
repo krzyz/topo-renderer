@@ -65,6 +65,27 @@ fn vs_main(
     return out;
 }
 
+fn hash12n(seed: vec2<f32>) -> f32 {
+	var p  = fract(seed * vec2<f32>(5.3987, 5.4421));
+    p += dot(p.yx, p.xy + vec2<f32>(21.5351, 14.3137));
+	return fract(p.x * p.y * 95.4307);
+}
+
+fn hash42n(p: vec2<f32>) -> vec3<f32> {
+    return vec3<f32>(hash12n(p), hash12n(p + 0.07), hash12n(p + 0.11));
+}
+
+fn ditherRGB(color: vec3<f32>, p: vec2<f32>) -> vec3<f32> {
+    return color + 4.0 * (hash42n(p) + hash42n(p + 0.13) - 1.0) / 255.0;
+}
+
+fn lin2srgb(color: vec3<f32>) -> vec3<f32> {
+    let color_lo = 12.92 * color;
+    let color_hi = 1.055 * pow(color,vec3<f32>(0.41666)) - 0.055;
+    let s = step( vec3<f32>(0.0031308), color);
+    return mix( color_lo, color_hi, s );
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient_strength = 0.1;
@@ -76,12 +97,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 
     let ambient_color = light_color * ambient_strength;
-    let result = (ambient_color + diffuse_color) * in.color;
+    let result_lin = (ambient_color + diffuse_color) * in.color;
+    //let result_srgb = lin2srgb(result_lin);
+    let result = ditherRGB(result_lin, in.world_position.xy);
 
-    if uniforms.view_mode == 1 {
+    if uniforms.view_mode == 2 {
         return vec4<f32>(in.world_normal, 1.0);
-    } else if uniforms.view_mode == 2 {
-        return vec4<f32>(uniforms.sun_direction, 1.0);
+        //return vec4<f32>(result_lin, 1.0);
+    } else if uniforms.view_mode == 1 {
+        return vec4<f32>(result_lin, 1.0);
+        //return vec4<f32>(result_srgb, 1.0);
     } else {
         return vec4<f32>(result, 1.0);
     }

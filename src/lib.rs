@@ -1,8 +1,10 @@
+extern crate approx;
+
 pub mod common;
 pub mod render;
 
-use anyhow::Result;
 use bytes::Bytes;
+use color_eyre::eyre::Result;
 use render::state::State;
 use std::{fs::File, io::Write};
 use wasm_bindgen::prelude::*;
@@ -35,7 +37,8 @@ pub async fn write_tiff_from_http() -> Result<()> {
     Ok(())
 }
 
-async fn run(event_loop: EventLoop<()>, window: Window) {
+async fn run(event_loop: EventLoop<()>, window: Window) -> Result<()> {
+    color_eyre::install()?;
     let mut state = State::new(&window).await;
     let mut surface_configured = false;
 
@@ -93,6 +96,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             }
         })
         .unwrap();
+
+    Ok(())
 }
 
 #[wasm_bindgen(start)]
@@ -119,7 +124,7 @@ pub fn start() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         env_logger::init();
-        pollster::block_on(run(event_loop, window));
+        let _ = pollster::block_on(run(event_loop, window));
     }
     #[cfg(target_arch = "wasm32")]
     {

@@ -1,0 +1,192 @@
+latitude,longitude,name,elevation
+-33.625145,-70.60304,Cerro Las Cabras,736.0
+-34.09605,-70.796906,Cerro Tuniche,800.0
+-33.90571,-70.70996,Cerro Challay,1258.0
+-33.93042,-70.79791,Morro El Carretón,1639.0
+-34.225037,-70.62155,Cerro Nogalillo,1390.0
+-34.16086,-70.59778,Cerro Machalí,1535.0
+-33.649353,-70.66712,Cerro Los Morros,692.0
+-33.65364,-70.63492,Cerro Maipo,905.0
+-33.79423,-70.95934,Morro Las Cabras,1127.0
+-33.799393,-70.98065,Cerro El Maitén,1323.0
+-33.818336,-70.98706,Morro Las Abejas,1276.0
+-33.774258,-70.9826,Cerro Yerbas Buenas,1337.0
+-33.931713,-70.843124,Punta Alta,1850.0
+-33.68478,-70.73247,Cerro Lo Herrera,690.0
+-33.595406,-70.73103,Cerro Chena,952.0
+-33.594154,-70.742836,Cerro San Jorge,945.0
+-34.029697,-71.30051,Cerro Tres Linderos,694.0
+-33.606216,-70.54594,Cerro La Ballena,876.0
+-33.540607,-71.334236,Cerro Colorado,1087.0
+-33.53109,-71.34591,Cerro Guanaco,1155.0
+-33.58781,-71.317505,Cerro Minillas,823.0
+-33.552525,-70.546745,Cerro Chequén,775.0
+-34.183243,-70.63537,Cerro San Juan,805.0
+-33.96676,-70.96625,Alto de Cantillana,2281.0
+-33.888145,-71.01541,Horcón de Piedra,2070.0
+-33.813084,-70.994255,Cerro El Pangue,1303.0
+-33.865356,-70.93053,Loma La Olivera,520.0
+-33.8576,-70.934395,Loma de la Laguna,450.0
+-33.842632,-70.876434,Cerro Tralcaco,841.0
+-33.811485,-70.9168,Cerro Las Caletas,888.0
+-33.80088,-70.92302,Alto de los Quillayes,951.0
+-33.838852,-70.88377,Morro Infiernillo,867.0
+-33.917,-70.96699,Morro Las Lagunas,2061.0
+-33.881306,-71.00399,Morro de Los Quechos,1690.0
+-33.898094,-70.951965,Cerro Colimahue,1535.0
+-33.863445,-70.95308,Morro La Bandera,777.0
+-33.952034,-70.83354,Cerro El Planchón,2034.0
+-33.95668,-70.90816,Morro Aliste,1809.0
+-33.88597,-70.95729,Morro de La Perdiz,1100.0
+-33.975372,-70.92413,Cerro Toros Muertos,2161.0
+-33.98831,-70.89595,Morro Los Lunes,1839.0
+-33.96689,-70.85654,Cerro Las Sierrecillas,2062.0
+-33.985966,-70.88905,Portezuelo Huiticalán,1434.0
+-33.595337,-70.53003,Cerro La Virgen,813.0
+-34.24235,-70.71621,Cerro Trocalán,1268.0
+-34.263325,-70.78417,Cerro Las Cabras,651.0
+-34.101612,-71.22757,Morro El Peumo,694.0
+-34.16135,-70.94753,Morro del Chivato,1492.0
+-33.94723,-71.1493,Cerro El Maiten,1140.0
+-33.89271,-71.0796,Cerro La Matancilla,1910.0
+-33.99174,-71.10081,Cerro Hueque,910.0
+-33.624252,-70.6759,Cerro Negro,783.0
+-33.6835,-70.64936,Cerro Santa Rita,950.0
+-34.404934,-70.66851,Sierra Nevada,2089.0
+-33.96123,-70.54415,Cerro Pabellones,2497.0
+-34.00983,-70.62777,Cerro La Carmelita,770.0
+-34.146915,-70.57451,Alto Los Canelos,1731.0
+-34.09893,-70.53985,Alto Los Lunes,2049.0
+-34.149197,-71.24155,Cerro Quilamuta,1261.0
+-34.373756,-71.160515,Cerro Gulutrén,582.0
+-34.41425,-71.34591,Cerro Mancumán,443.0
+-34.384857,-71.2953,Cerro Bari,769.0
+-34.36889,-71.33279,Cerro Valdovinos,755.0
+-34.251457,-71.33102,Cerro Los Cristales,642.0
+-34.303482,-71.19014,Cerro Pío-Pío,1150.0
+-34.485664,-71.25527,Cordón de Tagüa Tagüa,770.0
+-34.24661,-71.117035,Cerro Quillayquén,1600.0
+-34.21072,-71.082756,Cerro Las Ventanas,1456.0
+-34.16784,-71.00654,Cerro Toro Negro,1378.0
+-34.44989,-70.501305,Cerro de los Escalones,3268.0
+-34.44669,-71.1941,Cerro La Silleta,700.0
+-34.440437,-71.23593,Cerro Guanaco,825.0
+-34.4452,-71.25676,Cerro El Salto,590.0
+-34.47161,-71.27639,Cerro Pangalillo,589.0
+-34.47623,-71.25894,Morro Negro,737.0
+-34.474373,-71.23802,Cerro Peumo Redondo,820.0
+-34.485825,-71.21937,Cerro Peladero,606.0
+-34.474377,-71.140625,Cerro La Muralla,460.0
+-34.479534,-71.12342,Cerro Mina de Cuero,405.0
+-34.395206,-71.26469,Punta Alta de Almahue,530.0
+-34.422794,-71.38086,Cerrillo San Roberto,198.0
+-34.418068,-71.33006,Cerro La Patagüilla,346.0
+-34.354725,-71.37298,Cerro Barros Negros,464.0
+-34.339436,-71.37832,Cerro Las Cañas,375.0
+-34.324253,-71.37662,Cerro Mirandino,290.0
+-34.412792,-71.45157,La Cruz,242.0
+-34.399483,-71.14096,Cerro El Molino,506.0
+-34.176712,-71.455505,Loma del Boldo,237.0
+-34.197018,-71.43592,Cerro El Litre,251.0
+-34.20035,-71.38483,Manzano Segundo,365.0
+-34.216835,-71.34726,Morro Las Diucas,444.0
+-34.11569,-71.46093,Punta del Espino,370.0
+-34.20229,-71.41703,Cerro La Cuchilla,213.0
+-34.133583,-71.35836,Morro Los Codos,411.0
+-34.11104,-71.43312,La Higuera,294.0
+-34.12514,-71.47579,Cerro El Mogote,346.0
+-34.142254,-71.499504,Potreros Los Cerros,196.0
+-34.11426,-71.4686,Cerro La Lancha,379.0
+-34.1173,-71.474174,Cerro Los Guairabos,358.0
+-34.132416,-71.45006,Loma Tranque,208.0
+-34.078014,-71.38776,Cerro Las Cardas,500.0
+-34.092815,-71.41309,Cerro San Diego,231.0
+-34.07204,-71.34948,Cerro Las Torres,470.0
+-34.13144,-71.34132,Morro El Espino,460.0
+-34.11881,-71.33242,Cerro Loma Blanca,512.0
+-34.12256,-71.30567,Cerro Tres Linderos,764.0
+-34.138382,-71.28003,Cerro El Sauce,769.0
+-34.180218,-71.28277,Cerro Los Peguenes,609.0
+-34.241932,-71.25433,Cerro Chivato,941.0
+-34.25112,-71.252914,Cerro Coligue,807.0
+-34.26045,-71.267,Cerro Las Bandurrias,754.0
+-34.214737,-71.38043,El Penon,365.0
+-34.268932,-71.317535,Cerro Piedras de Afilar,405.0
+-34.28175,-71.28961,Cerro La Esperanza,483.0
+-34.308838,-71.237915,Puntilla Las Palomas,715.0
+-34.299957,-71.21802,Cerro Risco Bayo,901.0
+-34.390682,-71.07382,Alto de la Mesa,569.0
+-34.433525,-70.9847,Cerro Nancura,728.0
+-34.278435,-71.18807,Alto de Las Ovejas,1182.0
+-34.25616,-71.18095,Cerro Curamahuida,939.0
+-34.24701,-71.19411,Alto Viscachas,1177.0
+-34.144268,-70.91478,Alto del Llivillivi,1827.0
+-34.11722,-70.93528,Alto del Gusano,2078.0
+-34.038445,-70.88905,Alto Romeral,1600.0
+-34.040363,-70.82132,Cerro Huilmay,1568.0
+-33.95355,-70.82412,Loma Las Abejas,1968.0
+-34.008015,-70.80572,Cerro Colorado,1961.0
+-34.050213,-71.458984,Cerro Los Cóndores,589.0
+-34.371254,-71.115,Cerro Toquihua,350.0
+-34.430454,-71.04061,Cerro Punta Alta,614.0
+-34.4784,-71.20882,Cerro Los Paltos,440.0
+-34.435776,-71.212746,Cerro El Parrón,730.0
+-33.545,-70.5303,Cerro Santa Rosa,1108.0
+-34.173317,-70.98371,Cerro La Quisca,1426.0
+-34.212185,-71.20303,Cerro Pitrucao,681.0
+-34.401424,-70.78108,Cerro San Juan de El Cerrillo,440.0
+-34.175247,-71.064095,Cerro Poqui,1824.0
+-33.621326,-70.706085,Cerro Quimey,618.0
+-34.3979,-70.512505,Cerro Los Caletones,2402.0
+-34.470898,-70.52297,Cerro Las Pizarras,3390.0
+-34.49308,-70.528,Cerro Los Helados,3442.0
+-34.49752,-70.55974,Altos del Cepillo,3125.0
+-34.46195,-70.58052,Cerro Los Pocillos,2578.0
+-34.452396,-70.58162,Cerro Las Llaretas,2535.0
+-34.35001,-70.587746,Cerro Las Lámparas,2282.0
+-34.366695,-70.6031,Cerro Blanco,2232.0
+-34.410484,-70.59973,Cerro La Bandera,2284.0
+-34.451954,-70.62984,Cerro Portezuelo,2414.0
+-34.0061,-70.80481,Cerro Puerta de la Cordillera,1993.0
+-34.18007,-70.86683,Punta de Cortés,908.0
+-34.106762,-70.98943,Cerro Talami,1975.0
+-34.218163,-70.593666,Alto de Pangalillo,1412.0
+-34.24293,-70.883965,Cerro Rincón de Abra,725.0
+-34.23279,-70.71774,Cerro Orocoipo,1159.0
+-34.234184,-70.991165,Cerro El Colera,620.0
+-34.332565,-71.02417,Cerro El Rulo,700.0
+-33.849854,-70.533646,Cerro San Francisco,2176.0
+-34.15041,-70.6097,Morro Colorado,1271.0
+-34.16625,-71.035515,Riscos Hermanos,1313.0
+-34.100533,-70.93814,Cerro La Madera,2007.0
+-34.236145,-71.063934,Cerro La Puntilla,510.0
+-34.180325,-71.089584,Cerro Mudaumo,1211.0
+-34.154144,-71.18763,Morro Pelado,905.0
+-34.01579,-71.31609,Cerro Punta Alta,500.0
+-33.96672,-71.355,Cerro Puntilla,540.0
+-33.877228,-71.29872,Cerro Espino,770.0
+-33.85045,-71.3066,Cerro Alto El Quisco,780.0
+-33.826305,-71.18135,Cerro Peñón,880.0
+-34.418056,-70.75035,Cerro Huilquío,1377.0
+-34.353,-70.77395,Cerro Campana,679.0
+-34.37772,-70.75433,Cerro Maravilla,825.0
+-34.389553,-70.733986,Las 3 Comadres,1300.0
+-34.363213,-70.76815,Cerro Paragua,680.0
+-34.34706,-71.094444,Puntilla La Placeta,400.0
+-34.338814,-71.18084,Cerro La Gloria,857.0
+-33.700253,-71.23409,Cerro El Sombrero,510.0
+-33.608006,-70.90743,Cerro Peñaflor,430.0
+-33.608707,-70.7147,Cerro Hasbún,607.0
+-33.920216,-70.782196,La Olla,1160.0
+-33.54753,-70.50358,Los Peumos,1765.0
+-34.342728,-70.79584,Cerro Aplastado,546.0
+-34.419838,-70.81182,Cerro El Peñon,713.0
+-33.74488,-71.10551,Cerro Poca Pena,1231.0
+-33.637787,-71.05999,Cerro Punta Alta,1033.0
+-33.57621,-71.48774,Cerro Miltin,501.0
+-33.663807,-71.430984,Cerro Alto de Las Rosas,601.0
+-33.687744,-71.459656,Cerro Pelado,493.0
+-33.74281,-71.49125,Cerro Piedra Parada,503.0
+-33.533115,-70.56001,Cerro Jardín Alto,655.0
+-33.861782,-70.906815,Loma de los Pescadores,370.0
+-34.449257,-70.9464,Cerro Sol Pintado,310.0

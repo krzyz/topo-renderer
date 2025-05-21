@@ -25,7 +25,12 @@ pub struct RenderEnvironment {
 }
 
 impl RenderEnvironment {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, target_size: Size<u32>) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        target_size: Size<u32>,
+    ) -> Self {
         let first_pass_pipeline = Pipeline::create_first_pass_pipeline(device, format);
 
         let texture_view = Self::create_texture_view(device, format, target_size);
@@ -40,7 +45,7 @@ impl RenderEnvironment {
             first_pass_pipeline,
             postprocessing_pipeline,
             texture_view,
-            render_buffer: RenderBuffer::new(device),
+            render_buffer: RenderBuffer::new(device, queue),
             format,
             target_size,
         }
@@ -86,6 +91,7 @@ impl RenderEnvironment {
         queue: &wgpu::Queue,
         target_size: Size<u32>,
         geotiff_update: GeoTiffUpdate,
+        peaks: &Vec<glam::Vec3>,
         uniforms: &Uniforms,
         postprocessing_uniforms: &PostprocessingUniforms,
     ) {
@@ -104,14 +110,13 @@ impl RenderEnvironment {
 
         let geotiff = match geotiff_update {
             GeoTiffUpdate::New(geotiff) => Some(geotiff),
-            GeoTiffUpdate::Old(geotiff) if self.render_buffer.get_num_indices() == 0 => {
-                Some(geotiff)
-            }
+            GeoTiffUpdate::Old(geotiff) if self.render_buffer.is_terrain_empty() => Some(geotiff),
             _ => None,
         };
 
         if let Some(geotiff) = geotiff {
-            self.render_buffer.update(device, queue, geotiff);
+            self.render_buffer
+                .update(device, queue, geotiff, Some(peaks));
         }
     }
 
@@ -158,11 +163,26 @@ impl RenderEnvironment {
                 );
 
                 render_pass.set_vertex_buffer(0, self.render_buffer.get_vertices().raw.slice(..));
+                render_pass
+                    .set_vertex_buffer(1, self.render_buffer.get_peak_instances().raw.slice(..));
                 render_pass.set_index_buffer(
                     self.render_buffer.get_indices().raw.slice(..),
                     wgpu::IndexFormat::Uint32,
                 );
-                render_pass.draw_indexed(0..self.render_buffer.get_num_indices(), 0, 0..1);
+
+                /*
+                render_pass.draw_indexed(
+                    self.render_buffer.get_terrain_range(),
+                    self.render_buffer.get_vertex_offset(),
+                    0..1,
+                );
+                */
+
+                render_pass.draw_indexed(
+                    0..self.render_buffer.get_index_offset(),
+                    0,
+                    1..self.render_buffer.get_num_peak_instances(),
+                );
             }
 
             let mut postprocessing_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

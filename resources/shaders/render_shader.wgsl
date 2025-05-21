@@ -17,6 +17,10 @@ struct VertexInput {
     @location(1) normal: vec3<f32>,
 }
 
+struct InstanceInput {
+    @location(2) position: vec3<f32>,
+}
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
@@ -43,6 +47,7 @@ fn transform(h: f32, lambda_deg: f32, phi_deg: f32, lambda_0_deg: f32, phi_0_deg
 @vertex
 fn vs_main(
     model: VertexInput,
+    instance: InstanceInput,
 ) -> VertexOutput {
     var out: VertexOutput;
 
@@ -53,7 +58,7 @@ fn vs_main(
     let lambda = model.position.x;
     let phi = model.position.z;
 
-    let position = transform(model.position.y - height, lambda, phi, lambda_0, phi_0);
+    let position = transform(model.position.y - height, lambda, phi, lambda_0, phi_0) + instance.position;
 
     let view_normal = uniforms.normal_projection * vec4<f32>(model.normal, 1.0);
 

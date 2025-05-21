@@ -1,4 +1,5 @@
 use crate::get_tiff_from_file;
+use crate::render::peaks::Peak;
 
 use super::camera::Camera;
 use super::data::{PostprocessingUniforms, Uniforms};
@@ -14,6 +15,8 @@ use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 
+const R0: f32 = 6371000.0;
+
 enum CameraControllerEvent {
     ToggleViewMode,
 }
@@ -24,6 +27,8 @@ struct CameraController {
     is_down_pressed: bool,
     is_left_pressed: bool,
     is_right_pressed: bool,
+    is_e_pressed: bool,
+    is_q_pressed: bool,
     mouse_total_delta: (f32, f32),
     events_to_process: VecDeque<CameraControllerEvent>,
 }
@@ -36,6 +41,8 @@ impl CameraController {
             is_down_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
+            is_e_pressed: false,
+            is_q_pressed: false,
             mouse_total_delta: (0.0, 0.0),
             events_to_process: VecDeque::default(),
         }
@@ -71,6 +78,14 @@ impl CameraController {
                         self.is_right_pressed = is_pressed;
                         true
                     }
+                    KeyCode::KeyQ => {
+                        self.is_q_pressed = is_pressed;
+                        true
+                    }
+                    KeyCode::KeyE => {
+                        self.is_e_pressed = is_pressed;
+                        true
+                    }
                     KeyCode::KeyF if is_pressed => {
                         self.events_to_process
                             .push_front(CameraControllerEvent::ToggleViewMode);
@@ -95,11 +110,17 @@ impl CameraController {
 
     fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) {
         let increment = self.speed * 0.0001 * time_delta.as_micros() as f32;
-        if self.is_up_pressed {
+        if self.is_q_pressed {
             camera.set_fovy(camera.fov_y() - increment);
         }
-        if self.is_down_pressed {
+        if self.is_e_pressed {
             camera.set_fovy(camera.fov_y() + increment);
+        }
+        if self.is_up_pressed {
+            camera.rotate_vertical(-increment);
+        }
+        if self.is_down_pressed {
+            camera.rotate_vertical(increment);
         }
         if self.is_right_pressed {
             camera.rotate(-increment);
@@ -122,6 +143,22 @@ impl CameraController {
     }
 }
 
+pub fn transform(h: f32, lambda_deg: f32, phi_deg: f32, lambda_0_deg: f32, phi_0_deg: f32) -> Vec3 {
+    let r = R0 + h;
+    let phi = phi_deg / 180.0 * PI;
+    let lambda = lambda_deg / 180.0 * PI;
+    let phi_0 = phi_0_deg / 180.0 * PI;
+    let lambda_0 = lambda_0_deg / 180.0 * PI;
+    let dphi = phi - phi_0;
+    let dlambda = lambda - lambda_0;
+    // y is up
+    let x = -r * (dphi.sin() * dlambda.cos() + (1.0 - dlambda.cos()) * phi.sin() * phi_0.cos());
+    let y = r * (dphi.cos() * dlambda.cos() + (1.0 - dlambda.cos()) * phi.sin() * phi_0.sin()) - R0;
+    let z = r * phi.cos() * dlambda.sin();
+
+    Vec3::new(x, y, z)
+}
+
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -131,6 +168,7 @@ pub struct State<'a> {
     camera: Camera,
     camera_controller: CameraController,
     gtiff: GeoTiff,
+    peaks: Vec<Vec3>,
     uniforms: Uniforms,
     postprocessing_uniforms: PostprocessingUniforms,
     render_environment: RenderEnvironment,
@@ -201,8 +239,22 @@ impl<'a> State<'a> {
         let pixelize_n = 100.0;
         let center_coord = gtiff.model_extent().center();
         println!("Center coord: {center_coord:#?}");
-        let lambda_0 = 20.13715;
-        let phi_0 = 49.36991;
+        let lambda_0: f64 = 20.13715; // longitude
+        let phi_0: f64 = 49.36991; // latitude
+
+        let peaks = Peak::read_from_lat_lon(phi_0.round() as i32, lambda_0.round() as i32)
+            .expect("Unable to read peak data");
+
+        let peaks = peaks
+            .into_iter()
+            .filter_map(|p| {
+                gtiff
+                    .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
+                    .map(|h| transform(h, p.longitude, p.latitude, lambda_0 as f32, phi_0 as f32))
+            })
+            .collect::<Vec<_>>();
+
+        println!("Number of peaks: {}", peaks.len());
 
         let h = gtiff.get_value_at(&(lambda_0, phi_0).into(), 0).unwrap();
         let bounds = (size.width as f32, size.height as f32).into();
@@ -210,7 +262,7 @@ impl<'a> State<'a> {
         let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
 
         let render_environment =
-            RenderEnvironment::new(&device, format.add_srgb_suffix(), size.into());
+            RenderEnvironment::new(&device, &queue, format.add_srgb_suffix(), size.into());
 
         let prev_instant = Instant::now();
 
@@ -223,6 +275,7 @@ impl<'a> State<'a> {
             camera,
             camera_controller,
             gtiff,
+            peaks,
             uniforms,
             postprocessing_uniforms,
             render_environment,
@@ -257,6 +310,7 @@ impl<'a> State<'a> {
                 &self.queue,
                 new_size.into(),
                 GeoTiffUpdate::Old(&self.gtiff),
+                &self.peaks,
                 &self.uniforms,
                 &self.postprocessing_uniforms,
             );
@@ -277,6 +331,7 @@ impl<'a> State<'a> {
             &self.queue,
             self.size.into(),
             GeoTiffUpdate::Old(&self.gtiff),
+            &self.peaks,
             &self.uniforms,
             &self.postprocessing_uniforms,
         )

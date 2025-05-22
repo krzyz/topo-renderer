@@ -28,22 +28,6 @@ struct VertexOutput {
     @location(2) world_normal: vec3<f32>,
 }
 
-fn transform(h: f32, lambda_deg: f32, phi_deg: f32, lambda_0_deg: f32, phi_0_deg: f32) -> vec3<f32> {
-    let r = R0 + h;
-    let phi = phi_deg / 180.0 * PI;
-    let lambda = lambda_deg / 180.0 * PI;
-    let phi_0 = phi_0_deg / 180.0 * PI;
-    let lambda_0 = lambda_0_deg / 180.0 * PI;
-    let dphi = phi - phi_0;
-    let dlambda = lambda - lambda_0;
-    // y is up
-    let x = -r * (sin(dphi) * cos(dlambda) + (1.0 - cos(dlambda)) * sin(phi) * cos(phi_0));
-    let y = r * (cos(dphi) * cos(dlambda) + (1.0 - cos(dlambda)) * sin(phi) * sin(phi_0)) - R0;
-    let z = r * cos(phi) * sin(dlambda);
-
-    return vec3<f32>(x, y, z);
-}
-
 @vertex
 fn vs_main(
     model: VertexInput,
@@ -51,16 +35,9 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    let lambda_0 = uniforms.lambda_phi_h.x;
-    let phi_0 = uniforms.lambda_phi_h.y;
-    let height = uniforms.lambda_phi_h.z;
+    let position = model.position + instance.position;
 
-    let lambda = model.position.x;
-    let phi = model.position.z;
-
-    let position = transform(model.position.y - height, lambda, phi, lambda_0, phi_0) + instance.position;
-
-    let view_normal = uniforms.normal_projection * vec4<f32>(model.normal, 1.0);
+    //let view_normal = uniforms.normal_projection * vec4<f32>(model.normal, 1.0);
 
     out.color = vec3<f32>(1.0, 1.0, 1.0);
     out.world_position = position;

@@ -170,18 +170,16 @@ impl RenderEnvironment {
                     wgpu::IndexFormat::Uint32,
                 );
 
-                /*
                 render_pass.draw_indexed(
                     self.render_buffer.get_terrain_range(),
                     self.render_buffer.get_vertex_offset(),
                     0..1,
                 );
-                */
 
                 render_pass.draw_indexed(
                     0..self.render_buffer.get_index_offset(),
                     0,
-                    1..self.render_buffer.get_num_peak_instances(),
+                    0..self.render_buffer.get_num_peak_instances(),
                 );
             }
 

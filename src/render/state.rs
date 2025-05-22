@@ -1,4 +1,5 @@
 use crate::get_tiff_from_file;
+use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
 
 use super::camera::Camera;
@@ -14,8 +15,6 @@ use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
-
-const R0: f32 = 6371000.0;
 
 enum CameraControllerEvent {
     ToggleViewMode,
@@ -143,22 +142,6 @@ impl CameraController {
     }
 }
 
-pub fn transform(h: f32, lambda_deg: f32, phi_deg: f32, lambda_0_deg: f32, phi_0_deg: f32) -> Vec3 {
-    let r = R0 + h;
-    let phi = phi_deg / 180.0 * PI;
-    let lambda = lambda_deg / 180.0 * PI;
-    let phi_0 = phi_0_deg / 180.0 * PI;
-    let lambda_0 = lambda_0_deg / 180.0 * PI;
-    let dphi = phi - phi_0;
-    let dlambda = lambda - lambda_0;
-    // y is up
-    let x = -r * (dphi.sin() * dlambda.cos() + (1.0 - dlambda.cos()) * phi.sin() * phi_0.cos());
-    let y = r * (dphi.cos() * dlambda.cos() + (1.0 - dlambda.cos()) * phi.sin() * phi_0.sin()) - R0;
-    let z = r * phi.cos() * dlambda.sin();
-
-    Vec3::new(x, y, z)
-}
-
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -230,7 +213,7 @@ impl<'a> State<'a> {
         };
 
         let mut camera = Camera::default();
-        camera.set_eye(Vec3::new(0.0, 10.0, 0.0));
+        camera.set_eye(Vec3::new(0.0, 1000.0, 0.0));
         camera.set_direction(0.75 * PI);
         let camera_controller = CameraController::new(0.01);
 

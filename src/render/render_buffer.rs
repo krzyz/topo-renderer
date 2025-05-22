@@ -1,36 +1,20 @@
 use std::sync::{LazyLock, Mutex};
 
-use color_eyre::owo_colors::OwoColorize;
 use geotiff::GeoTiff;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{
     buffer::Buffer,
     data::{PeakInstanceRaw, Vertex},
-    geometry::{generate_icosahedron, Mesh},
-    state::transform,
+    geometry::{generate_icosahedron, transform, Mesh},
 };
 
 const LAMBDA_0: f32 = 20.13715; // longitude
 const PHI_0: f32 = 49.36991; // latitude
 
-const R0: f32 = 6371000.0;
-const PI: f32 = 3.14159265359;
-
-const TO_RAD_FACTOR: f32 = 2.0 * PI / 180.0;
-
 static SPHERE_MESH: LazyLock<Mutex<Mesh>> = LazyLock::new(|| {
-    let phi_0_rad = 49.37 * TO_RAD_FACTOR;
-    let scale = glam::Vec3::new(1e4 / R0, 100.0, 1e4 / R0 / phi_0_rad.cos());
-    let mut mesh = generate_icosahedron(scale);
-    mesh.vertices = mesh
-        .vertices
-        .iter()
-        .map(|v| Vertex {
-            position: v.position + glam::Vec3::new(PHI_0, 0.0, LAMBDA_0),
-            normal: v.normal,
-        })
-        .collect();
+    let scale = glam::Vec3::new(50.0, 50.0, 50.0);
+    let mesh = generate_icosahedron(scale);
     Mutex::new(mesh)
 });
 
@@ -91,41 +75,9 @@ impl RenderBuffer {
             wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
 
-        let vertex_offset;
-        let index_offset;
-        {
-            let sphere_mesh = SPHERE_MESH.lock().expect("Unable to get sphere vertices");
-            vertex_offset = sphere_mesh.vertices.len() as u64;
-            index_offset = sphere_mesh.indices.len() as u64;
-            vertices.resize(device, vertex_offset * std::mem::size_of::<Vertex>() as u64);
-
-            sphere_mesh.vertices.iter().for_each(|v| {
-                println!("Sphere vertex: {:#?}", v.position);
-                println!(
-                    "Transformed: {:#?}",
-                    transform(v.position.y, v.position.z, v.position.x, LAMBDA_0, PHI_0)
-                );
-            });
-
-            queue.write_buffer(
-                &vertices.raw,
-                0,
-                bytemuck::cast_slice(sphere_mesh.vertices.as_slice()),
-            );
-
-            indices.resize(device, index_offset * std::mem::size_of::<u32>() as u64);
-
-            sphere_mesh.indices.iter().for_each(|v| {
-                println!("Index: {v}");
-            });
-
-            queue.write_buffer(
-                &indices.raw,
-                0,
-                bytemuck::cast_slice(sphere_mesh.indices.as_slice()),
-            );
-        }
-
+        let sphere_mesh = SPHERE_MESH.lock().expect("Unable to get sphere vertices");
+        let vertex_offset = sphere_mesh.vertices.len() as u64;
+        let index_offset = sphere_mesh.indices.len() as u64;
         Self {
             vertices,
             indices,
@@ -135,6 +87,30 @@ impl RenderBuffer {
             vertex_offset,
             index_offset,
         }
+    }
+
+    fn write_mesh_vertices(&self, queue: &wgpu::Queue) {
+        let sphere_mesh = SPHERE_MESH.lock().expect("Unable to get sphere vertices");
+
+        queue.write_buffer(
+            &self.vertices.raw,
+            0,
+            bytemuck::cast_slice(sphere_mesh.vertices.as_slice()),
+        );
+    }
+
+    fn write_mesh_indices(&self, queue: &wgpu::Queue) {
+        let sphere_mesh = SPHERE_MESH.lock().expect("Unable to get sphere vertices");
+
+        sphere_mesh.indices.iter().for_each(|v| {
+            println!("Index: {v}");
+        });
+
+        queue.write_buffer(
+            &self.indices.raw,
+            0,
+            bytemuck::cast_slice(sphere_mesh.indices.as_slice()),
+        );
     }
 
     pub fn get_terrain_range(&self) -> std::ops::Range<u32> {
@@ -147,15 +123,6 @@ impl RenderBuffer {
 
     pub fn get_index_offset(&self) -> u32 {
         self.index_offset as u32
-    }
-
-    fn from_geo_coord_to_meters(geo_coord: glam::Vec3, phi: f32) -> glam::Vec3 {
-        let dlambda = geo_coord.x * TO_RAD_FACTOR;
-        let dphi = geo_coord.z * TO_RAD_FACTOR;
-        let z = dlambda * R0 * phi.cos();
-        let x = dphi * R0;
-
-        glam::vec3(x, geo_coord.y, z)
     }
 
     fn generate_indices(&self, raster_width: usize, raster_height: usize) -> Vec<u32> {
@@ -211,7 +178,7 @@ impl RenderBuffer {
                 let height = geotiff.get_value_at(&coord, 0).expect(&format!(
                     "Unable to find value for {coord:#?} (row {row}, col {col}"
                 ));
-                let position = glam::vec3(coord.x as f32, height, coord.y as f32);
+                let position = transform(height, coord.x as f32, coord.y as f32, LAMBDA_0, PHI_0);
                 Vertex::new(position, glam::Vec3::ZERO)
             }).collect::<Vec<_>>())
             .collect::<Vec<_>>();
@@ -226,13 +193,10 @@ impl RenderBuffer {
             let v1 = vertices.get(i1 as usize).unwrap().position;
             let v2 = vertices.get(i2 as usize).unwrap().position;
 
-            let phi = v0.z * TO_RAD_FACTOR;
-
             let side1 = v1 - v0;
             let side2 = v2 - v1;
 
-            let contribution = Self::from_geo_coord_to_meters(side1, phi)
-                .cross(Self::from_geo_coord_to_meters(side2, phi));
+            let contribution = side1.cross(side2);
 
             for &i in chunk {
                 if let Some(vertex) = vertices.get_mut(i as usize) {
@@ -242,6 +206,10 @@ impl RenderBuffer {
         }
 
         println!("Vertex offset: {}", self.vertex_offset);
+
+        vertices.iter().take(5).for_each(|v| {
+            println!("Terrain vertex: {:#?}", v.position);
+        });
 
         queue.write_buffer(
             &self.vertices.raw,
@@ -254,6 +222,7 @@ impl RenderBuffer {
             (self.index_offset as u64 + indices.len() as u64) * std::mem::size_of::<u32>() as u64;
         self.indices.resize(device, new_indices_size);
         println!("Index offset: {}", self.index_offset);
+        self.write_mesh_indices(queue);
         queue.write_buffer(
             &self.indices.raw,
             self.index_offset * std::mem::size_of::<u32>() as u64,
@@ -274,6 +243,7 @@ impl RenderBuffer {
 
         if new_vertices_size != self.vertices.raw.size() {
             self.vertices.resize(device, new_vertices_size);
+            self.write_mesh_vertices(queue);
             self.copy_vertices_and_indices(device, queue, geotiff);
         }
 

@@ -1,12 +1,15 @@
 use geotiff::GeoTiff;
+use log::debug;
 
-use crate::common::data::Size;
+use crate::common::data::{pad_256, Size};
 
 use super::{
     bound_texture_view::BoundTextureView,
+    buffer::Buffer,
     data::{PostprocessingUniforms, Uniforms},
     pipeline::Pipeline,
     render_buffer::RenderBuffer,
+    state::PeakInstance,
     texture::Texture,
 };
 
@@ -20,17 +23,13 @@ pub struct RenderEnvironment {
     postprocessing_pipeline: Pipeline,
     texture_view: BoundTextureView,
     render_buffer: RenderBuffer,
+    depth_read_buffer: Buffer,
     format: wgpu::TextureFormat,
     target_size: Size<u32>,
 }
 
 impl RenderEnvironment {
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        target_size: Size<u32>,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, target_size: Size<u32>) -> Self {
         let first_pass_pipeline = Pipeline::create_first_pass_pipeline(device, format);
 
         let texture_view = Self::create_texture_view(device, format, target_size);
@@ -41,14 +40,36 @@ impl RenderEnvironment {
             &texture_view.get_texture_bind_group_layout(),
         );
 
+        let x = pad_256(target_size.width) * target_size.height * 4;
+
+        let depth_read_buffer = Buffer::new(
+            device,
+            "Depth read buffer",
+            x as u64,
+            wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        );
+
         Self {
             first_pass_pipeline,
             postprocessing_pipeline,
             texture_view,
-            render_buffer: RenderBuffer::new(device, queue),
+            render_buffer: RenderBuffer::new(device),
+            depth_read_buffer,
             format,
             target_size,
         }
+    }
+
+    pub fn get_texture_view(&self) -> &BoundTextureView {
+        &self.texture_view
+    }
+
+    pub fn get_depth_read_buffer(&self) -> &Buffer {
+        &self.depth_read_buffer
+    }
+
+    pub fn get_depth_read_buffer_mut(&mut self) -> &mut Buffer {
+        &mut self.depth_read_buffer
     }
 
     fn create_texture_view(
@@ -80,6 +101,8 @@ impl RenderEnvironment {
     ) {
         if self.target_size.height != size.height || self.target_size.width != size.width {
             self.texture_view = Self::create_texture_view(device, format, size);
+            self.depth_read_buffer
+                .resize(device, (pad_256(size.width) * size.height * 4) as u64);
 
             self.target_size = size;
         }
@@ -91,7 +114,7 @@ impl RenderEnvironment {
         queue: &wgpu::Queue,
         target_size: Size<u32>,
         geotiff_update: GeoTiffUpdate,
-        peaks: &Vec<glam::Vec3>,
+        peaks: &Vec<PeakInstance>,
         uniforms: &Uniforms,
         postprocessing_uniforms: &PostprocessingUniforms,
     ) {
@@ -115,9 +138,18 @@ impl RenderEnvironment {
         };
 
         if let Some(geotiff) = geotiff {
-            self.render_buffer
-                .update(device, queue, geotiff, Some(peaks));
+            self.render_buffer.update_terrain(device, queue, geotiff);
         }
+
+        let visible_peaks = &peaks
+            .iter()
+            .filter_map(|p| p.visible.then_some(p.position))
+            .collect();
+
+        self.render_buffer
+            .update_peaks(device, queue, visible_peaks);
+
+        debug!("Visible peaks number: {}", visible_peaks.len());
     }
 
     pub fn render(

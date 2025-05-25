@@ -1,6 +1,10 @@
 use winit::dpi::PhysicalSize;
 
-#[derive(Copy, Clone, Debug)]
+pub fn pad_256(size: u32) -> u32 {
+    ((size - 1) / 256 + 1) * 256
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Size<T> {
     pub width: T,
     pub height: T,

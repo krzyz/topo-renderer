@@ -102,7 +102,8 @@ impl Camera {
 
         let proj = glam::Mat4::perspective_rh(self.fov_y, aspect_ratio, self.near, self.far);
 
-        OPENGL_TO_WGPU_MATRIX * proj * self.get_view()
+        //OPENGL_TO_WGPU_MATRIX * proj * self.get_view()
+        proj * self.get_view()
     }
 
     pub fn build_view_normal_matrix(&self) -> glam::Mat4 {
@@ -139,14 +140,5 @@ impl Camera {
 
     pub fn rotate_vertical(&mut self, clockwise_rotation: f32) {
         self.set_direction_vertical(self.direction_vertical + clockwise_rotation);
-    }
-
-    pub fn get_projections(&self, width: f32, height: f32, points: &[Vec3]) -> Vec<Vec3> {
-        let view_proj_matrix = self.build_view_proj_matrix(width, height);
-
-        points
-            .iter()
-            .map(|p| view_proj_matrix.project_point3(*p))
-            .collect()
     }
 }

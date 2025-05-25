@@ -1,3 +1,4 @@
+use crate::common::data::{pad_256, Size};
 use crate::get_tiff_from_file;
 use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
@@ -5,12 +6,16 @@ use crate::render::peaks::Peak;
 use super::camera::Camera;
 use super::data::{PostprocessingUniforms, Uniforms};
 use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
+use bytes::Buf;
 use geotiff::GeoTiff;
 use glam::Vec3;
+use log::debug;
 use std::collections::VecDeque;
 use std::f32::consts::PI;
+use std::io::Cursor;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
-use std::{io::Cursor, iter};
+use wgpu::{ImageCopyBuffer, ImageDataLayout};
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -142,6 +147,25 @@ impl CameraController {
     }
 }
 
+pub enum Message {
+    DepthBufferReady(Size<u32>),
+}
+
+#[derive(Clone, Copy)]
+pub struct PeakInstance {
+    pub position: Vec3,
+    pub visible: bool,
+}
+
+impl PeakInstance {
+    pub fn new(position: Vec3) -> Self {
+        Self {
+            position,
+            visible: false,
+        }
+    }
+}
+
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -151,16 +175,19 @@ pub struct State<'a> {
     camera: Camera,
     camera_controller: CameraController,
     gtiff: GeoTiff,
-    peaks: Vec<Vec3>,
+    peaks: Vec<PeakInstance>,
     uniforms: Uniforms,
     postprocessing_uniforms: PostprocessingUniforms,
     render_environment: RenderEnvironment,
     window: &'a Window,
     prev_instant: Instant,
+    sender: Sender<Message>,
+    receiver: Receiver<Message>,
 }
 
 impl<'a> State<'a> {
     pub async fn new(window: &'a Window) -> State<'a> {
+        let (sender, receiver) = channel();
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -221,7 +248,7 @@ impl<'a> State<'a> {
 
         let pixelize_n = 100.0;
         let center_coord = gtiff.model_extent().center();
-        println!("Center coord: {center_coord:#?}");
+        debug!("Center coord: {center_coord:#?}");
         let lambda_0: f64 = 20.13715; // longitude
         let phi_0: f64 = 49.36991; // latitude
 
@@ -233,11 +260,19 @@ impl<'a> State<'a> {
             .filter_map(|p| {
                 gtiff
                     .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
-                    .map(|h| transform(h, p.longitude, p.latitude, lambda_0 as f32, phi_0 as f32))
+                    .map(|h| {
+                        PeakInstance::new(transform(
+                            h,
+                            p.longitude,
+                            p.latitude,
+                            lambda_0 as f32,
+                            phi_0 as f32,
+                        ))
+                    })
             })
             .collect::<Vec<_>>();
 
-        println!("Number of peaks: {}", peaks.len());
+        debug!("Number of peaks: {}", peaks.len());
 
         let h = gtiff.get_value_at(&(lambda_0, phi_0).into(), 0).unwrap();
         let bounds = (size.width as f32, size.height as f32).into();
@@ -245,7 +280,7 @@ impl<'a> State<'a> {
         let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
 
         let render_environment =
-            RenderEnvironment::new(&device, &queue, format.add_srgb_suffix(), size.into());
+            RenderEnvironment::new(&device, format.add_srgb_suffix(), size.into());
 
         let prev_instant = Instant::now();
 
@@ -264,6 +299,8 @@ impl<'a> State<'a> {
             render_environment,
             window,
             prev_instant,
+            sender,
+            receiver,
         }
     }
 
@@ -301,6 +338,61 @@ impl<'a> State<'a> {
     }
 
     pub fn update(&mut self) {
+        self.device.poll(wgpu::Maintain::Poll);
+
+        if let Some(mes) = self.receiver.try_iter().last() {
+            match mes {
+                Message::DepthBufferReady(size) => {
+                    if size == self.size.into() {
+                        let depth_buffer = self
+                            .render_environment
+                            .get_depth_read_buffer()
+                            .raw
+                            .slice(..)
+                            .get_mapped_range();
+                        let projection = self.camera.build_view_proj_matrix(
+                            self.size.width as f32,
+                            self.size.height as f32,
+                        );
+                        self.peaks.iter_mut().enumerate().for_each(|(i, peak)| {
+                            let projected_point = projection.project_point3(peak.position);
+                            if projected_point.x >= -1.0
+                                && projected_point.x <= 1.0
+                                && projected_point.y >= -1.0
+                                && projected_point.y <= 1.0
+                            {
+                                let (x_pos, y_pos) = (
+                                    (0.5 * (projected_point.x + 1.0) * self.size.width as f32)
+                                        as u32,
+                                    (0.5 * (projected_point.y + 1.0) * self.size.height as f32)
+                                        as u32,
+                                );
+
+                                let pos = (x_pos * 4 + y_pos * pad_256(size.width * 4)) as usize;
+
+                                let depth_value = depth_buffer
+                                    .get(pos..pos + 4)
+                                    .expect("Failed depth buffer lookup")
+                                    .get_f32_le();
+
+                                debug!("Projected point {i}: {projected_point}");
+                                debug!("depth value: {:.16}", 1.0 - depth_value);
+
+                                if 1.01 * projected_point.z >= 1.0 - depth_value {
+                                    peak.visible = true;
+                                    debug!("visible");
+                                }
+                            } else {
+                                peak.visible = false;
+                            }
+                        });
+                    } else {
+                    }
+                    self.render_environment.get_depth_read_buffer_mut().unmap();
+                }
+            }
+        }
+
         let current_instant = Instant::now();
         let time_delta = current_instant - self.prev_instant;
         self.prev_instant = current_instant;
@@ -317,10 +409,11 @@ impl<'a> State<'a> {
             &self.peaks,
             &self.uniforms,
             &self.postprocessing_uniforms,
-        )
+        );
     }
 
     pub fn render(&mut self) -> std::result::Result<(), wgpu::SurfaceError> {
+        debug!("Render start");
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.config.format.add_srgb_suffix()),
@@ -333,11 +426,51 @@ impl<'a> State<'a> {
                 label: Some("Render Encoder"),
             });
 
+        let mut depth_texture_size = None;
         self.render_environment
             .render(&view, &mut encoder, self.size.into());
 
-        self.queue.submit(iter::once(encoder.finish()));
+        if !self.render_environment.get_depth_read_buffer().mapped {
+            let depth_texture = self
+                .render_environment
+                .get_texture_view()
+                .get_textures()
+                .get(1)
+                .expect("missing depth texture")
+                .get_texture();
+
+            depth_texture_size = Some(depth_texture.size());
+
+            let bytes_per_row_unpadded = depth_texture.width() * 4;
+
+            let depth_read_buffer_info = ImageCopyBuffer {
+                buffer: &self.render_environment.get_depth_read_buffer().raw,
+                layout: ImageDataLayout {
+                    bytes_per_row: Some(pad_256(bytes_per_row_unpadded)),
+                    ..Default::default()
+                },
+            };
+
+            encoder.copy_texture_to_buffer(
+                depth_texture.as_image_copy(),
+                depth_read_buffer_info,
+                depth_texture.size(),
+            );
+        }
+
+        self.queue.submit(Some(encoder.finish()));
         output.present();
+
+        if let Some(depth_texture_size) = depth_texture_size {
+            debug!("Render map");
+            self.render_environment.get_depth_read_buffer_mut().map(
+                self.sender.clone(),
+                depth_texture_size.width,
+                depth_texture_size.height,
+            );
+        }
+
+        debug!("Render end");
 
         Ok(())
     }

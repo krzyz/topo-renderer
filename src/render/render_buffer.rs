@@ -1,6 +1,7 @@
 use std::sync::{LazyLock, Mutex};
 
 use geotiff::GeoTiff;
+use log::debug;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{
@@ -53,15 +54,15 @@ impl RenderBuffer {
         self.num_indices == self.index_offset as u32
     }
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        let mut vertices = Buffer::new(
+    pub fn new(device: &wgpu::Device) -> Self {
+        let vertices = Buffer::new(
             device,
             "vertex buffer",
             0,
             wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
 
-        let mut indices = Buffer::new(
+        let indices = Buffer::new(
             device,
             "Index buffer",
             0,
@@ -103,7 +104,7 @@ impl RenderBuffer {
         let sphere_mesh = SPHERE_MESH.lock().expect("Unable to get sphere vertices");
 
         sphere_mesh.indices.iter().for_each(|v| {
-            println!("Index: {v}");
+            debug!("Index: {v}");
         });
 
         queue.write_buffer(
@@ -205,10 +206,10 @@ impl RenderBuffer {
             }
         }
 
-        println!("Vertex offset: {}", self.vertex_offset);
+        debug!("Vertex offset: {}", self.vertex_offset);
 
         vertices.iter().take(5).for_each(|v| {
-            println!("Terrain vertex: {:#?}", v.position);
+            debug!("Terrain vertex: {:#?}", v.position);
         });
 
         queue.write_buffer(
@@ -221,7 +222,7 @@ impl RenderBuffer {
         let new_indices_size =
             (self.index_offset as u64 + indices.len() as u64) * std::mem::size_of::<u32>() as u64;
         self.indices.resize(device, new_indices_size);
-        println!("Index offset: {}", self.index_offset);
+        debug!("Index offset: {}", self.index_offset);
         self.write_mesh_indices(queue);
         queue.write_buffer(
             &self.indices.raw,
@@ -230,12 +231,11 @@ impl RenderBuffer {
         );
     }
 
-    pub fn update(
+    pub fn update_terrain(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         geotiff: &GeoTiff,
-        peak_instances: Option<&Vec<glam::Vec3>>,
     ) {
         let new_vertices_size = ((geotiff.raster_width * geotiff.raster_height
             + self.vertex_offset as usize)
@@ -246,25 +246,30 @@ impl RenderBuffer {
             self.write_mesh_vertices(queue);
             self.copy_vertices_and_indices(device, queue, geotiff);
         }
+    }
 
-        if let Some(peak_instances) = peak_instances {
-            self.peak_instances.resize(
-                device,
-                ((1 + peak_instances.len()) * std::mem::size_of::<PeakInstanceRaw>()) as u64,
-            );
-            self.num_peak_instances = 1 + peak_instances.len() as u32;
-            println!(
-                "Updating instances buffer to size: {}",
-                self.num_peak_instances
-            );
-            peak_instances.iter().take(5).for_each(|pi| {
-                println!("{pi:#?}");
-            });
-            queue.write_buffer(
-                &self.peak_instances.raw,
-                std::mem::size_of::<PeakInstanceRaw>() as u64,
-                bytemuck::cast_slice(peak_instances.as_slice()),
-            )
-        }
+    pub fn update_peaks(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        peak_instances: &Vec<glam::Vec3>,
+    ) {
+        self.peak_instances.resize(
+            device,
+            ((1 + peak_instances.len()) * std::mem::size_of::<PeakInstanceRaw>()) as u64,
+        );
+        self.num_peak_instances = 1 + peak_instances.len() as u32;
+        debug!(
+            "Updating instances buffer to size: {}",
+            self.num_peak_instances
+        );
+        peak_instances.iter().take(5).for_each(|pi| {
+            debug!("{:#?}", pi);
+        });
+        queue.write_buffer(
+            &self.peak_instances.raw,
+            std::mem::size_of::<PeakInstanceRaw>() as u64,
+            bytemuck::cast_slice(peak_instances.as_slice()),
+        )
     }
 }

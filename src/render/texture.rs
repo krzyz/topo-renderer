@@ -6,6 +6,7 @@ pub enum TextureType {
 }
 
 pub struct Texture {
+    texture: wgpu::Texture,
     view: TextureView,
     sampler: Sampler,
     t_type: TextureType,
@@ -13,6 +14,10 @@ pub struct Texture {
 
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
+
+    pub fn get_texture(&self) -> &wgpu::Texture {
+        &self.texture
+    }
 
     pub fn get_view(&self) -> &TextureView {
         &self.view
@@ -68,6 +73,7 @@ impl Texture {
         });
 
         Self {
+            texture,
             view,
             sampler,
             t_type: TextureType::Render,
@@ -93,7 +99,8 @@ impl Texture {
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
-              | wgpu::TextureUsages::TEXTURE_BINDING,
+              | wgpu::TextureUsages::TEXTURE_BINDING
+              | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         };
         let texture = device.create_texture(&desc);
@@ -106,6 +113,7 @@ impl Texture {
         });
 
         Self {
+            texture,
             view,
             sampler,
             t_type: TextureType::Depth,

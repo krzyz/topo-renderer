@@ -15,7 +15,7 @@ use std::f32::consts::PI;
 use std::io::Cursor;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
-use wgpu::{ImageCopyBuffer, ImageDataLayout};
+use wgpu::{TexelCopyBufferInfo, TexelCopyBufferLayout};
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -192,7 +192,7 @@ impl<'a> State<'a> {
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
             #[cfg(target_arch = "wasm32")]
@@ -209,16 +209,13 @@ impl<'a> State<'a> {
             .await
             .unwrap();
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: Default::default(),
-                },
-                // Some(&std::path::Path::new("trace")), // Trace path
-                None, // Trace path
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: Default::default(),
+                trace: wgpu::Trace::Off,
+            })
             .await
             .unwrap();
 
@@ -338,7 +335,9 @@ impl<'a> State<'a> {
     }
 
     pub fn update(&mut self) {
-        self.device.poll(wgpu::Maintain::Poll);
+        self.device
+            .poll(wgpu::PollType::Poll)
+            .expect("Error polling");
 
         if let Some(mes) = self.receiver.try_iter().last() {
             match mes {
@@ -443,9 +442,9 @@ impl<'a> State<'a> {
 
             let bytes_per_row_unpadded = depth_texture.width() * 4;
 
-            let depth_read_buffer_info = ImageCopyBuffer {
+            let depth_read_buffer_info = TexelCopyBufferInfo {
                 buffer: &self.render_environment.get_depth_read_buffer().raw,
-                layout: ImageDataLayout {
+                layout: TexelCopyBufferLayout {
                     bytes_per_row: Some(pad_256(bytes_per_row_unpadded)),
                     ..Default::default()
                 },

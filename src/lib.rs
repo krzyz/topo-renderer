@@ -78,7 +78,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) -> Result<()> {
                                     state.resize(state.size())
                                 }
                                 // The system is out of memory, we should probably quit
-                                Err(wgpu::SurfaceError::OutOfMemory) => {
+                                Err(
+                                    wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other,
+                                ) => {
                                     log::error!("OutOfMemory");
                                     control_flow.exit();
                                 }

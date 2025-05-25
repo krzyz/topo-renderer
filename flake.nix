@@ -38,6 +38,7 @@
           ++ (with pkgs; [
             evcxr
             rust-analyzer-unwrapped
+            cargo-edit
             wasm-pack
             trunk
           ]);

@@ -7,22 +7,22 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-glam = { version = "0.29.2", features = ["bytemuck"] }
-bytemuck = { version = "1.21.0", features = ["derive"] }
-bytes = "1.9.0"
+glam = { version = "0.30.3", features = ["bytemuck"] }
+bytemuck = { version = "1.23.0", features = ["derive"] }
+bytes = "1.10.1"
 console_error_panic_hook = "0.1.7"
 console_log = "1"
 env_logger = "0.11"
-itertools = "0.13.0"
-reqwest = { version = "0.12.9", features = ["stream"] }
+itertools = "0.14.0"
+reqwest = { version = "0.12.15", features = ["stream"] }
 geotiff = { git = "https://github.com/georust/geotiff", rev = "95172cb80e0eeb0bd6bb5409927aadef34464e9a" }
-pollster = "0.3"
-wgpu = { version = "23.0.1" }
-wasm-bindgen = "0.2.99"
-wasm-bindgen-futures = "0.4.45"
-web-sys = "0.3.72"
+pollster = "0.4"
+wgpu = { version = "25.0.2" }
+wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4.50"
+web-sys = "0.3.77"
 winit = "0.29.15"
-log = "0.4.22"
+log = "0.4.27"
 rayon = "1.10.0"
 csv = "1.3.1"
 serde = { version = "1.0.219", features = ["derive"] }

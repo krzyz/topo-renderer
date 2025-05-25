@@ -14,6 +14,7 @@ use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::io::Cursor;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use wgpu::{TexelCopyBufferInfo, TexelCopyBufferLayout};
 use winit::dpi::PhysicalSize;
@@ -166,8 +167,8 @@ impl PeakInstance {
     }
 }
 
-pub struct State<'a> {
-    surface: wgpu::Surface<'a>,
+pub struct State {
+    surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -179,14 +180,20 @@ pub struct State<'a> {
     uniforms: Uniforms,
     postprocessing_uniforms: PostprocessingUniforms,
     render_environment: RenderEnvironment,
-    window: &'a Window,
+    window: Arc<Window>,
     prev_instant: Instant,
     sender: Sender<Message>,
     receiver: Receiver<Message>,
 }
 
-impl<'a> State<'a> {
-    pub async fn new(window: &'a Window) -> State<'a> {
+impl std::fmt::Debug for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("State").finish()
+    }
+}
+
+impl State {
+    pub async fn new(window: Arc<Window>) -> State {
         let (sender, receiver) = channel();
         let size = window.inner_size();
 
@@ -199,7 +206,7 @@ impl<'a> State<'a> {
             backends: wgpu::Backends::GL,
             ..Default::default()
         });
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),

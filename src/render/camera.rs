@@ -1,4 +1,4 @@
-use glam::{mat4, vec3, vec4, Vec3};
+use glam::{vec3, Vec3};
 use std::f32::consts::PI;
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -72,13 +72,6 @@ impl Default for Camera {
     }
 }
 
-pub const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = mat4(
-    vec4(1.0, 0.0, 0.0, 0.0),
-    vec4(0.0, 1.0, 0.0, 0.0),
-    vec4(0.0, 0.0, 0.5, 0.0),
-    vec4(0.0, 0.0, 0.5, 1.0),
-);
-
 impl Camera {
     pub const DEFAULT_POSITION: Vec3 = vec3(0.0, 10.0, 0.0);
 
@@ -102,7 +95,6 @@ impl Camera {
 
         let proj = glam::Mat4::perspective_rh(self.fov_y, aspect_ratio, self.near, self.far);
 
-        //OPENGL_TO_WGPU_MATRIX * proj * self.get_view()
         proj * self.get_view()
     }
 

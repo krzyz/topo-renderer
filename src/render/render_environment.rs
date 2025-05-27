@@ -1,5 +1,6 @@
 use geotiff::GeoTiff;
 use log::debug;
+use wgpu::RenderPass;
 
 use crate::common::data::{pad_256, Size};
 
@@ -152,12 +153,12 @@ impl RenderEnvironment {
         debug!("Visible peaks number: {}", visible_peaks.len());
     }
 
-    pub fn render(
+    pub fn render<'a>(
         &self,
         target: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
+        encoder: &'a mut wgpu::CommandEncoder,
         viewport: Size<u32>,
-    ) {
+    ) -> Box<RenderPass<'a>> {
         {
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -215,20 +216,21 @@ impl RenderEnvironment {
                 );
             }
 
-            let mut postprocessing_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("postprocessing.pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut postprocessing_pass =
+                Box::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("postprocessing.pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: target,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                }));
 
             postprocessing_pass.set_scissor_rect(0, 0, viewport.width, viewport.height);
             postprocessing_pass.set_pipeline(&self.postprocessing_pipeline.get_pipeline());
@@ -239,6 +241,7 @@ impl RenderEnvironment {
                 &[],
             );
             postprocessing_pass.draw(0..6, 0..1);
+            postprocessing_pass
         }
     }
 }

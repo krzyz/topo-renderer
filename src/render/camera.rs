@@ -32,7 +32,7 @@ pub struct LightAngle {
 impl LightAngle {
     pub fn to_vec3(&self) -> glam::Vec3 {
         glam::Mat3::from_euler(
-            glam::EulerRot::XYZEx,
+            glam::EulerRot::XYZ,
             PI * self.theta / 180.0,
             PI * self.phi / 180.0,
             0.0,

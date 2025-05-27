@@ -10,8 +10,10 @@ use std::{fs::File, io::Write, sync::Arc};
 use wasm_bindgen::prelude::*;
 use winit::{
     application::ApplicationHandler,
+    dpi::LogicalSize,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop},
+    platform::x11::WindowAttributesExtX11,
     window::{Window, WindowId},
 };
 
@@ -49,8 +51,12 @@ impl ApplicationHandler for Application {
             return;
         }
 
+        let (width, height) = (800, 600);
         #[allow(unused_mut)]
-        let mut window_attributes = Window::default_attributes();
+        let mut window_attributes = Window::default_attributes()
+            .with_base_size(LogicalSize::new(width as f64, height as f64))
+            .with_min_inner_size(LogicalSize::new(width as f64, height as f64))
+            .with_inner_size(LogicalSize::new(width as f64, height as f64));
 
         #[cfg(target_arch = "wasm32")]
         {

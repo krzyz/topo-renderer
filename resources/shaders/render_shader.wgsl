@@ -58,7 +58,7 @@ fn hash42n(p: vec2<f32>) -> vec3<f32> {
 }
 
 fn ditherRGB(color: vec3<f32>, p: vec2<f32>) -> vec3<f32> {
-    return color + 4.0 * (hash42n(p) + hash42n(p + 0.13) - 1.0) / 255.0;
+    return color + 1.0 * (hash42n(p) + hash42n(p + 0.13) - 1.0) / 255.0;
 }
 
 fn lin2srgb(color: vec3<f32>) -> vec3<f32> {
@@ -70,7 +70,7 @@ fn lin2srgb(color: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let ambient_strength = 0.1;
+    let ambient_strength = 0.01;
     let light_color = vec3<f32>(1.0, 1.0, 1.0);
     let light_position = vec3<f32>(100000.0, 1000000.0, 150000.0);
 

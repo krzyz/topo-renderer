@@ -6,9 +6,11 @@ use crate::render::peaks::Peak;
 use super::camera::Camera;
 use super::data::{PostprocessingUniforms, Uniforms};
 use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
+use super::text::TextState;
 use bytes::Buf;
 use geotiff::GeoTiff;
 use glam::Vec3;
+use itertools::Itertools;
 use log::debug;
 use std::collections::VecDeque;
 use std::f32::consts::PI;
@@ -34,6 +36,7 @@ struct CameraController {
     is_right_pressed: bool,
     is_e_pressed: bool,
     is_q_pressed: bool,
+    during_change: bool,
     mouse_total_delta: (f32, f32),
     events_to_process: VecDeque<CameraControllerEvent>,
 }
@@ -48,6 +51,7 @@ impl CameraController {
             is_right_pressed: false,
             is_e_pressed: false,
             is_q_pressed: false,
+            during_change: false,
             mouse_total_delta: (0.0, 0.0),
             events_to_process: VecDeque::default(),
         }
@@ -113,25 +117,32 @@ impl CameraController {
         }
     }
 
-    fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) {
+    fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) -> bool {
+        let mut camera_changed = false;
         let increment = self.speed * 0.0001 * time_delta.as_micros() as f32;
         if self.is_q_pressed {
             camera.set_fovy(camera.fov_y() - increment);
+            camera_changed = true;
         }
         if self.is_e_pressed {
             camera.set_fovy(camera.fov_y() + increment);
+            camera_changed = true;
         }
         if self.is_up_pressed {
             camera.rotate_vertical(-increment);
+            camera_changed = true;
         }
         if self.is_down_pressed {
             camera.rotate_vertical(increment);
+            camera_changed = true;
         }
         if self.is_right_pressed {
             camera.rotate(-increment);
+            camera_changed = true;
         }
         if self.is_left_pressed {
             camera.rotate(increment);
+            camera_changed = true;
         }
         camera.sun_angle.theta += self.mouse_total_delta.0;
         camera.sun_angle.phi += self.mouse_total_delta.1;
@@ -145,6 +156,18 @@ impl CameraController {
                     camera.view_mode = camera.view_mode.toggle();
                 }
             });
+
+        /*
+        let change_just_stopped = match (self.during_change, camera_changed) {
+            (true, false) => true,
+            _ => false,
+        };
+        */
+
+        self.during_change = camera_changed;
+
+        //change_just_stopped;
+        camera_changed
     }
 }
 
@@ -152,16 +175,18 @@ pub enum Message {
     DepthBufferReady(Size<u32>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct PeakInstance {
     pub position: Vec3,
+    pub name: String,
     pub visible: bool,
 }
 
 impl PeakInstance {
-    pub fn new(position: Vec3) -> Self {
+    pub fn new(position: Vec3, name: String) -> Self {
         Self {
             position,
+            name,
             visible: false,
         }
     }
@@ -180,10 +205,12 @@ pub struct State {
     uniforms: Uniforms,
     postprocessing_uniforms: PostprocessingUniforms,
     render_environment: RenderEnvironment,
+    text_state: TextState,
     window: Arc<Window>,
     prev_instant: Instant,
     sender: Sender<Message>,
     receiver: Receiver<Message>,
+    recalculate_peaks: bool,
 }
 
 impl std::fmt::Debug for State {
@@ -196,6 +223,7 @@ impl State {
     pub async fn new(window: Arc<Window>) -> State {
         let (sender, receiver) = channel();
         let size = window.inner_size();
+        let scale_factor = window.scale_factor();
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -243,6 +271,17 @@ impl State {
             desired_maximum_frame_latency: 2,
         };
 
+        let mut text_state = TextState::new(
+            &device,
+            &queue,
+            &config,
+            (
+                size.width as f32 * scale_factor as f32,
+                size.height as f32 * scale_factor as f32,
+            )
+                .into(),
+        );
+
         let mut camera = Camera::default();
         camera.set_eye(Vec3::new(0.0, 1000.0, 0.0));
         camera.set_direction(0.75 * PI);
@@ -265,13 +304,10 @@ impl State {
                 gtiff
                     .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
                     .map(|h| {
-                        PeakInstance::new(transform(
-                            h,
-                            p.longitude,
-                            p.latitude,
-                            lambda_0 as f32,
-                            phi_0 as f32,
-                        ))
+                        PeakInstance::new(
+                            transform(h, p.longitude, p.latitude, lambda_0 as f32, phi_0 as f32),
+                            p.name,
+                        )
                     })
             })
             .collect::<Vec<_>>();
@@ -288,6 +324,8 @@ impl State {
 
         let prev_instant = Instant::now();
 
+        text_state.prepare_peak_labels(&peaks);
+
         Self {
             surface,
             device,
@@ -301,10 +339,12 @@ impl State {
             uniforms,
             postprocessing_uniforms,
             render_environment,
+            text_state,
             window,
             prev_instant,
             sender,
             receiver,
+            recalculate_peaks: true,
         }
     }
 
@@ -317,6 +357,17 @@ impl State {
     }
 
     pub fn update_size(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        /*
+        let scale_factor = self.window.scale_factor();
+        self.text_state.update_buffer_size(
+            (
+                new_size.width as f32 * scale_factor as f32,
+                new_size.height as f32 * scale_factor as f32,
+            )
+                .into(),
+        );
+        */
+        self.surface.configure(&self.device, &self.config);
         self.size = new_size;
         let bounds = (new_size.width as f32, new_size.height as f32).into();
         self.uniforms = self.uniforms.update_projection(&self.camera, bounds);
@@ -325,10 +376,19 @@ impl State {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
+            self.recalculate_peaks = true;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.update_size(new_size);
-            self.surface.configure(&self.device, &self.config);
+
+            self.text_state.viewport.update(
+                &self.queue,
+                glyphon::Resolution {
+                    width: self.config.width,
+                    height: self.config.height,
+                },
+            );
+
             self.render_environment.update(
                 &self.device,
                 &self.queue,
@@ -350,51 +410,76 @@ impl State {
             match mes {
                 Message::DepthBufferReady(size) => {
                     if size == self.size.into() {
-                        let depth_buffer = self
-                            .render_environment
-                            .get_depth_read_buffer()
-                            .raw
-                            .slice(..)
-                            .get_mapped_range();
-                        let projection = self.camera.build_view_proj_matrix(
-                            self.size.width as f32,
-                            self.size.height as f32,
-                        );
-                        self.peaks.iter_mut().enumerate().for_each(|(i, peak)| {
-                            let projected_point = projection.project_point3(peak.position);
-                            if projected_point.x >= -1.0
-                                && projected_point.x <= 1.0
-                                && projected_point.y >= -1.0
-                                && projected_point.y <= 1.0
-                            {
-                                let (x_pos, y_pos) = (
-                                    (0.5 * (projected_point.x + 1.0) * self.size.width as f32)
-                                        as u32,
-                                    (0.5 * (projected_point.y + 1.0) * self.size.height as f32)
-                                        as u32,
-                                );
+                        let peak_labels = {
+                            let depth_buffer = self
+                                .render_environment
+                                .get_depth_read_buffer()
+                                .raw
+                                .slice(..)
+                                .get_mapped_range();
+                            let projection = self.camera.build_view_proj_matrix(
+                                self.size.width as f32,
+                                self.size.height as f32,
+                            );
+                            self.peaks
+                                .iter_mut()
+                                .enumerate()
+                                .map(|(i, peak)| {
+                                    let projected_point = projection.project_point3(peak.position);
+                                    if projected_point.x > -1.0
+                                        && projected_point.x < 1.0
+                                        && projected_point.y > -1.0
+                                        && projected_point.y < 1.0
+                                    {
+                                        let (x_pos, y_pos) = (
+                                            (0.5 * (projected_point.x + 1.0)
+                                                * self.size.width as f32)
+                                                as u32,
+                                            (-0.5
+                                                * (projected_point.y - 1.0)
+                                                * self.size.height as f32)
+                                                as u32,
+                                        );
 
-                                let pos = (x_pos * 4 + y_pos * pad_256(size.width * 4)) as usize;
+                                        let pos =
+                                            (x_pos * 4 + y_pos * pad_256(size.width * 4)) as usize;
 
-                                let depth_value = depth_buffer
-                                    .get(pos..pos + 4)
-                                    .expect("Failed depth buffer lookup")
-                                    .get_f32_le();
+                                        let depth_value = depth_buffer
+                                            .get(pos..pos + 4)
+                                            .expect("Failed depth buffer lookup")
+                                            .get_f32_le();
 
-                                debug!("Projected point {i}: {projected_point}");
-                                debug!("depth value: {:.16}", 1.0 - depth_value);
+                                        debug!(
+                                            "Projected point {}: {projected_point}, pos: ({}, {})",
+                                            peak.name, x_pos, y_pos
+                                        );
+                                        debug!("depth value: {:.16}", depth_value);
 
-                                if 1.01 * projected_point.z >= 1.0 - depth_value {
-                                    peak.visible = true;
-                                    debug!("visible");
-                                }
-                            } else {
-                                peak.visible = false;
-                            }
-                        });
+                                        if projected_point.z < 1.000001 * depth_value {
+                                            peak.visible = true;
+                                            debug!("visible");
+                                            (i, peak, Some((x_pos, y_pos)))
+                                        } else {
+                                            (i, peak, None)
+                                        }
+                                    } else {
+                                        (i, peak, None)
+                                    }
+                                })
+                                .update(|(_, peak, vis_pos)| match vis_pos {
+                                    Some(_) => peak.visible = true,
+                                    None => peak.visible = false,
+                                })
+                                .filter_map(|(i, _, vis_pos)| vis_pos.map(|pos| (i as u32, pos)))
+                                .collect::<Vec<_>>()
+                        };
+                        self.render_environment.get_depth_read_buffer_mut().unmap();
+
+                        self.text_state
+                            .prepare(&self.device, &self.queue, peak_labels);
+                        self.recalculate_peaks = false;
                     } else {
                     }
-                    self.render_environment.get_depth_read_buffer_mut().unmap();
                 }
             }
         }
@@ -405,8 +490,12 @@ impl State {
 
         let bounds = (self.size.width as f32, self.size.height as f32).into();
         self.uniforms = self.uniforms.update_projection(&self.camera, bounds);
-        self.camera_controller
+        let camera_change_just_stopped = self
+            .camera_controller
             .update_camera(&mut self.camera, time_delta);
+        if camera_change_just_stopped {
+            self.recalculate_peaks = true;
+        }
         self.render_environment.update(
             &self.device,
             &self.queue,
@@ -419,7 +508,6 @@ impl State {
     }
 
     pub fn render(&mut self) -> std::result::Result<(), wgpu::SurfaceError> {
-        debug!("Render start");
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.config.format.add_srgb_suffix()),
@@ -433,10 +521,14 @@ impl State {
             });
 
         let mut depth_texture_size = None;
-        self.render_environment
-            .render(&view, &mut encoder, self.size.into());
+        {
+            let mut pass = self
+                .render_environment
+                .render(&view, &mut encoder, self.size.into());
+            self.text_state.render(&mut pass);
+        }
 
-        if !self.render_environment.get_depth_read_buffer().mapped {
+        if !self.render_environment.get_depth_read_buffer().mapped && self.recalculate_peaks {
             let depth_texture = self
                 .render_environment
                 .get_texture_view()
@@ -466,6 +558,7 @@ impl State {
 
         self.queue.submit(Some(encoder.finish()));
         output.present();
+        self.text_state.atlas.trim();
 
         if let Some(depth_texture_size) = depth_texture_size {
             debug!("Render map");
@@ -475,8 +568,6 @@ impl State {
                 depth_texture_size.height,
             );
         }
-
-        debug!("Render end");
 
         Ok(())
     }

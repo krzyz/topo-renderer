@@ -1,7 +1,7 @@
 use crate::common::data::{pad_256, Size};
-use crate::get_tiff_from_file;
 use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
+use crate::{get_tiff_from_file, UserEvent};
 
 use super::camera::Camera;
 use super::camera_controller::CameraController;
@@ -21,10 +21,24 @@ use std::time::Instant;
 use wgpu::{TexelCopyBufferInfo, TexelCopyBufferLayout};
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, WindowEvent};
+use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
+// This structure holds settings that if changed
+// require a recalculation of depth buffer to adjust visible peaks
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct DepthState {
+    size: Size<u32>,
+    camera: Camera,
+}
+
+#[derive(Debug)]
+pub enum StateEvent {
+    FrameFinished(DepthState),
+}
+
 pub enum Message {
-    DepthBufferReady(Size<u32>),
+    DepthBufferReady(DepthState),
 }
 
 #[derive(Clone)]
@@ -45,6 +59,7 @@ impl PeakInstance {
 }
 
 pub struct State {
+    event_loop_proxy: EventLoopProxy<UserEvent>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -62,7 +77,7 @@ pub struct State {
     prev_instant: Instant,
     sender: Sender<Message>,
     receiver: Receiver<Message>,
-    recalculate_peaks: bool,
+    depth_state: Option<DepthState>,
 }
 
 impl std::fmt::Debug for State {
@@ -72,7 +87,7 @@ impl std::fmt::Debug for State {
 }
 
 impl State {
-    pub async fn new(window: Arc<Window>) -> State {
+    pub async fn new(window: Arc<Window>, event_loop_proxy: EventLoopProxy<UserEvent>) -> State {
         let (sender, receiver) = channel();
         let size = window.inner_size();
         let scale_factor = window.scale_factor();
@@ -179,6 +194,7 @@ impl State {
         text_state.prepare_peak_labels(&peaks);
 
         Self {
+            event_loop_proxy,
             surface,
             device,
             queue,
@@ -196,7 +212,7 @@ impl State {
             prev_instant,
             sender,
             receiver,
-            recalculate_peaks: true,
+            depth_state: None,
         }
     }
 
@@ -208,17 +224,14 @@ impl State {
         self.size
     }
 
+    pub fn new_depth_state(&self) -> DepthState {
+        DepthState {
+            size: self.size.into(),
+            camera: self.camera,
+        }
+    }
+
     pub fn update_size(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        /*
-        let scale_factor = self.window.scale_factor();
-        self.text_state.update_buffer_size(
-            (
-                new_size.width as f32 * scale_factor as f32,
-                new_size.height as f32 * scale_factor as f32,
-            )
-                .into(),
-        );
-        */
         self.surface.configure(&self.device, &self.config);
         self.size = new_size;
         let bounds = (new_size.width as f32, new_size.height as f32).into();
@@ -228,7 +241,6 @@ impl State {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.recalculate_peaks = true;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.update_size(new_size);
@@ -260,19 +272,21 @@ impl State {
 
         if let Some(mes) = self.receiver.try_iter().last() {
             match mes {
-                Message::DepthBufferReady(size) => {
-                    if size == self.size.into() {
+                Message::DepthBufferReady(depth_state) => {
+                    if depth_state.size == self.size.into() {
                         let peak_labels = {
+                            self.depth_state = Some(depth_state);
                             let depth_buffer = self
                                 .render_environment
                                 .get_depth_read_buffer()
                                 .raw
                                 .slice(..)
                                 .get_mapped_range();
-                            let projection = self.camera.build_view_proj_matrix(
-                                self.size.width as f32,
-                                self.size.height as f32,
+                            let projection = depth_state.camera.build_view_proj_matrix(
+                                depth_state.size.width as f32,
+                                depth_state.size.height as f32,
                             );
+
                             self.peaks
                                 .iter_mut()
                                 .enumerate()
@@ -293,23 +307,26 @@ impl State {
                                                 as u32,
                                         );
 
-                                        let pos =
-                                            (x_pos * 4 + y_pos * pad_256(size.width * 4)) as usize;
+                                        let pos = (x_pos * 4
+                                            + y_pos * pad_256(depth_state.size.width * 4))
+                                            as usize;
 
                                         let depth_value = depth_buffer
                                             .get(pos..pos + 4)
                                             .expect("Failed depth buffer lookup")
                                             .get_f32_le();
 
+                                        /*
                                         debug!(
                                             "Projected point {}: {projected_point}, pos: ({}, {})",
                                             peak.name, x_pos, y_pos
                                         );
                                         debug!("depth value: {:.16}", depth_value);
+                                        */
 
                                         if projected_point.z < 1.000001 * depth_value {
                                             peak.visible = true;
-                                            debug!("visible");
+                                            //debug!("visible");
                                             (i, peak, Some((x_pos, y_pos)))
                                         } else {
                                             (i, peak, None)
@@ -325,13 +342,11 @@ impl State {
                                 .filter_map(|(i, _, vis_pos)| vis_pos.map(|pos| (i as u32, pos)))
                                 .collect::<Vec<_>>()
                         };
-                        self.render_environment.get_depth_read_buffer_mut().unmap();
 
                         self.text_state
                             .prepare(&self.device, &self.queue, peak_labels);
-                        self.recalculate_peaks = false;
-                    } else {
                     }
+                    self.render_environment.get_depth_read_buffer_mut().unmap();
                 }
             }
         }
@@ -342,12 +357,8 @@ impl State {
 
         let bounds = (self.size.width as f32, self.size.height as f32).into();
         self.uniforms = self.uniforms.update_projection(&self.camera, bounds);
-        let camera_change_just_stopped = self
-            .camera_controller
+        self.camera_controller
             .update_camera(&mut self.camera, time_delta);
-        if camera_change_just_stopped {
-            self.recalculate_peaks = true;
-        }
         self.render_environment.update(
             &self.device,
             &self.queue,
@@ -372,7 +383,7 @@ impl State {
                 label: Some("Render Encoder"),
             });
 
-        let mut depth_texture_size = None;
+        let mut copying_depth_texture = false;
         {
             let mut pass = self
                 .render_environment
@@ -380,7 +391,13 @@ impl State {
             self.text_state.render(&mut pass);
         }
 
-        if !self.render_environment.get_depth_read_buffer().mapped && self.recalculate_peaks {
+        if !self.render_environment.get_depth_read_buffer().mapped
+            && (self
+                .depth_state
+                .is_none_or(|depth_state| depth_state != self.new_depth_state()))
+        {
+            debug!("Copying");
+            copying_depth_texture = true;
             let depth_texture = self
                 .render_environment
                 .get_texture_view()
@@ -388,8 +405,6 @@ impl State {
                 .get(1)
                 .expect("missing depth texture")
                 .get_texture();
-
-            depth_texture_size = Some(depth_texture.size());
 
             let bytes_per_row_unpadded = depth_texture.width() * 4;
 
@@ -412,13 +427,16 @@ impl State {
         output.present();
         self.text_state.atlas.trim();
 
-        if let Some(depth_texture_size) = depth_texture_size {
-            debug!("Render map");
-            self.render_environment.get_depth_read_buffer_mut().map(
-                self.sender.clone(),
-                depth_texture_size.width,
-                depth_texture_size.height,
-            );
+        if copying_depth_texture {
+            let event_loop_proxy = self.event_loop_proxy.clone();
+            let new_depth_state = self.new_depth_state();
+            self.queue.on_submitted_work_done(move || {
+                event_loop_proxy
+                    .send_event(UserEvent::StateEvent(StateEvent::FrameFinished(
+                        new_depth_state,
+                    )))
+                    .unwrap();
+            });
         }
 
         Ok(())
@@ -430,5 +448,16 @@ impl State {
 
     pub fn device_input(&mut self, event: &DeviceEvent) {
         self.camera_controller.process_device_events(event)
+    }
+
+    pub fn handle_event(&mut self, event: StateEvent) {
+        match event {
+            StateEvent::FrameFinished(new_depth_state) => {
+                debug!("Render map");
+                self.render_environment
+                    .get_depth_read_buffer_mut()
+                    .map(self.sender.clone(), new_depth_state);
+            }
+        }
     }
 }

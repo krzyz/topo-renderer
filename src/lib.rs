@@ -5,14 +5,14 @@ pub mod render;
 
 use bytes::Bytes;
 use color_eyre::eyre::Result;
-use render::state::State;
+use render::state::{State, StateEvent};
 use std::{fs::File, io::Write, sync::Arc};
 use wasm_bindgen::prelude::*;
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     platform::x11::WindowAttributesExtX11,
     window::{Window, WindowId},
 };
@@ -40,12 +40,18 @@ pub async fn write_tiff_from_http() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
+pub enum UserEvent {
+    StateEvent(StateEvent),
+}
+
 struct Application {
     state: Option<State>,
     surface_configured: bool,
+    event_loop_proxy: EventLoopProxy<UserEvent>,
 }
 
-impl ApplicationHandler for Application {
+impl ApplicationHandler<UserEvent> for Application {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() {
             return;
@@ -77,15 +83,19 @@ impl ApplicationHandler for Application {
         #[cfg(not(target_arch = "wasm32"))]
         {
             env_logger::init();
-            self.state = Some(pollster::block_on(State::new(window)));
+            self.state = Some(pollster::block_on(State::new(
+                window,
+                self.event_loop_proxy.clone(),
+            )));
         }
         #[cfg(target_arch = "wasm32")]
         {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
             console_log::init().expect("could not initialize logger");
             let (sender, mut receiver) = futures::channel::oneshot::channel();
+            let event_loop_proxy = self.event_loop_proxy.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let state = State::new(window).await;
+                let state = State::new(window, event_loop_proxy).await;
                 sender.send(state).unwrap();
             });
             self.state = Some(
@@ -158,15 +168,27 @@ impl ApplicationHandler for Application {
             .iter_mut()
             .for_each(|state| state.device_input(&event));
     }
+
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
+        match event {
+            UserEvent::StateEvent(event) => {
+                if let Some(state) = &mut self.state {
+                    state.handle_event(event);
+                }
+            }
+        }
+    }
 }
 
 #[wasm_bindgen(start)]
 pub fn start() {
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
+    let event_loop_proxy = event_loop.create_proxy();
     event_loop
         .run_app(&mut Application {
             state: None,
             surface_configured: false,
+            event_loop_proxy,
         })
         .unwrap();
 }

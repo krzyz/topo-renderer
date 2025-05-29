@@ -1,7 +1,7 @@
 use glam::{vec3, Vec3};
 use std::f32::consts::PI;
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum ViewMode {
     #[default]
     Default = 0,
@@ -21,7 +21,7 @@ impl ViewMode {
 }
 
 // degrees
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct LightAngle {
     // 0 is down, around X
     pub theta: f32,
@@ -40,7 +40,7 @@ impl LightAngle {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Camera {
     eye: glam::Vec3,
     direction: f32,

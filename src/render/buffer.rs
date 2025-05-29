@@ -1,6 +1,8 @@
 use std::sync::mpsc::Sender;
 
-use crate::{common::data::Size, render::state::Message};
+use crate::render::state::Message;
+
+use super::state::DepthState;
 
 // A custom buffer container for dynamic resizing.
 pub struct Buffer {
@@ -52,19 +54,11 @@ impl Buffer {
         }
     }
 
-    pub fn map(
-        &mut self,
-        sender: Sender<Message>,
-        current_width: u32,
-        current_height: u32,
-    ) -> bool {
+    pub fn map(&mut self, sender: Sender<Message>, new_depth_state: DepthState) -> bool {
         if !self.mapped {
             self.raw.slice(..).map_async(wgpu::MapMode::Read, move |_| {
                 sender
-                    .send(Message::DepthBufferReady(Size {
-                        width: current_width,
-                        height: current_height,
-                    }))
+                    .send(Message::DepthBufferReady(new_depth_state))
                     .expect("Unable to send depth buffer ready message");
             });
             self.mapped = true;

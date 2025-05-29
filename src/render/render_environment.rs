@@ -1,5 +1,4 @@
 use geotiff::GeoTiff;
-use log::debug;
 use wgpu::RenderPass;
 
 use crate::common::data::{pad_256, Size};
@@ -115,7 +114,7 @@ impl RenderEnvironment {
         queue: &wgpu::Queue,
         target_size: Size<u32>,
         geotiff_update: GeoTiffUpdate,
-        peaks: &Vec<PeakInstance>,
+        _peaks: &Vec<PeakInstance>,
         uniforms: &Uniforms,
         postprocessing_uniforms: &PostprocessingUniforms,
     ) {
@@ -142,15 +141,14 @@ impl RenderEnvironment {
             self.render_buffer.update_terrain(device, queue, geotiff);
         }
 
+        /*
         let visible_peaks = &peaks
             .iter()
             .filter_map(|p| p.visible.then_some(p.position))
             .collect();
 
-        self.render_buffer
-            .update_peaks(device, queue, visible_peaks);
-
-        debug!("Visible peaks number: {}", visible_peaks.len());
+        */
+        self.render_buffer.update_peaks(device, queue, &vec![]);
     }
 
     pub fn render<'a>(

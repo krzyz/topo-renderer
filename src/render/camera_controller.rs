@@ -98,28 +98,39 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) {
+    pub fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) -> bool {
+        let mut changed = false;
         let increment = self.speed * 0.0001 * time_delta.as_micros() as f32;
         if self.is_q_pressed {
             camera.set_fovy(camera.fov_y() - increment);
+            changed = true;
         }
         if self.is_e_pressed {
             camera.set_fovy(camera.fov_y() + increment);
+            changed = true;
         }
         if self.is_up_pressed {
             camera.rotate_vertical(-increment);
+            changed = true;
         }
         if self.is_down_pressed {
             camera.rotate_vertical(increment);
+            changed = true;
         }
         if self.is_right_pressed {
             camera.rotate(-increment);
+            changed = true;
         }
         if self.is_left_pressed {
             camera.rotate(increment);
+            changed = true;
         }
         camera.sun_angle.theta += self.mouse_total_delta.0;
         camera.sun_angle.phi += self.mouse_total_delta.1;
+
+        if self.mouse_total_delta != (0.0, 0.0) {
+            changed = true;
+        }
 
         self.mouse_total_delta = (0.0, 0.0);
 
@@ -128,7 +139,10 @@ impl CameraController {
             .for_each(|event| match event {
                 CameraControllerEvent::ToggleViewMode => {
                     camera.view_mode = camera.view_mode.toggle();
+                    changed = true;
                 }
             });
+
+        changed
     }
 }

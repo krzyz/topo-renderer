@@ -124,6 +124,7 @@ impl ApplicationHandler<UserEvent> for Application {
                 WindowEvent::Resized(physical_size) => {
                     self.surface_configured = true;
                     state.resize(physical_size);
+                    state.force_render = true;
                     // On macos the window needs to be redrawn manually after resizing
                     state.window().request_redraw();
                 }
@@ -133,8 +134,8 @@ impl ApplicationHandler<UserEvent> for Application {
                     if !self.surface_configured {
                         return;
                     }
-                    state.update();
-                    match state.render() {
+                    let changed = state.update();
+                    match state.render(changed) {
                         Ok(_) => {}
                         // Reconfigure the surface if it's lost or outdated
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

@@ -64,6 +64,7 @@ pub struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    pub force_render: bool,
     size: PhysicalSize<u32>,
     camera: Camera,
     camera_controller: CameraController,
@@ -199,6 +200,7 @@ impl State {
             device,
             queue,
             config,
+            force_render: true,
             size,
             camera,
             camera_controller,
@@ -265,7 +267,9 @@ impl State {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> bool {
+        let mut changed = false;
+
         self.device
             .poll(wgpu::PollType::Poll)
             .expect("Error polling");
@@ -345,6 +349,7 @@ impl State {
 
                         self.text_state
                             .prepare(&self.device, &self.queue, peak_labels);
+                        changed = true;
                     }
                     self.render_environment.get_depth_read_buffer_mut().unmap();
                 }
@@ -356,21 +361,31 @@ impl State {
         self.prev_instant = current_instant;
 
         let bounds = (self.size.width as f32, self.size.height as f32).into();
-        self.uniforms = self.uniforms.update_projection(&self.camera, bounds);
-        self.camera_controller
+        let camera_changed = self
+            .camera_controller
             .update_camera(&mut self.camera, time_delta);
-        self.render_environment.update(
-            &self.device,
-            &self.queue,
-            self.size.into(),
-            GeoTiffUpdate::Old(&self.gtiff),
-            &self.peaks,
-            &self.uniforms,
-            &self.postprocessing_uniforms,
-        );
+        changed = changed || camera_changed;
+        self.uniforms = self.uniforms.update_projection(&self.camera, bounds);
+        if changed {
+            self.render_environment.update(
+                &self.device,
+                &self.queue,
+                self.size.into(),
+                GeoTiffUpdate::Old(&self.gtiff),
+                &self.peaks,
+                &self.uniforms,
+                &self.postprocessing_uniforms,
+            );
+        }
+
+        changed
     }
 
-    pub fn render(&mut self) -> std::result::Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, changed: bool) -> std::result::Result<(), wgpu::SurfaceError> {
+        if !(changed || self.force_render) {
+            return Ok(());
+        }
+        self.force_render = false;
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.config.format.add_srgb_suffix()),

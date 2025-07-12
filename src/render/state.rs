@@ -12,7 +12,7 @@ use bytes::Buf;
 use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
-use log::debug;
+use log::{debug, info};
 use std::f32::consts::PI;
 use std::io::Cursor;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -99,7 +99,7 @@ impl State {
             #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
             #[cfg(target_arch = "wasm32")]
-            backends: wgpu::Backends::GL,
+            backends: wgpu::Backends::BROWSER_WEBGPU,
             ..Default::default()
         });
         let surface = instance.create_surface(window.clone()).unwrap();
@@ -155,6 +155,7 @@ impl State {
         camera.set_direction(0.75 * PI);
         let camera_controller = CameraController::new(0.01);
 
+        info!("Reading geotiff");
         let gtiff = GeoTiff::read(Cursor::new(get_tiff_from_file().unwrap().as_ref())).unwrap();
 
         let pixelize_n = 100.0;
@@ -163,6 +164,7 @@ impl State {
         let lambda_0: f64 = 20.13715; // longitude
         let phi_0: f64 = 49.36991; // latitude
 
+        info!("Reading peaks");
         let peaks = Peak::read_from_lat_lon(phi_0.round() as i32, lambda_0.round() as i32)
             .expect("Unable to read peak data");
 
@@ -194,6 +196,7 @@ impl State {
 
         text_state.prepare_peak_labels(&peaks);
 
+        info!("Finished State::new()");
         Self {
             event_loop_proxy,
             surface,

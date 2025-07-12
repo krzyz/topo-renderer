@@ -17,10 +17,9 @@ itertools = "0.14.0"
 reqwest = { version = "0.12.15", features = ["stream"] }
 geotiff = { git = "https://github.com/georust/geotiff", rev = "95172cb80e0eeb0bd6bb5409927aadef34464e9a" }
 pollster = "0.4"
-wgpu = { version = "25.0.2" }
+wgpu = { version = "25.0.2", features = ["webgpu"] }
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.50"
-web-sys = "0.3.77"
 winit = "0.30.11"
 log = "0.4.27"
 rayon = "1.10.0"

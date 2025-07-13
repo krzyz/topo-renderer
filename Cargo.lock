@@ -3026,7 +3026,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "topo2"
+name = "topo-renderer"
 version = "0.1.0"
 dependencies = [
  "approx",
@@ -3052,6 +3052,10 @@ dependencies = [
  "wgpu",
  "winit",
 ]
+
+[[package]]
+name = "topo_backend"
+version = "0.1.0"
 
 [[package]]
 name = "tower"

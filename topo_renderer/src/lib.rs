@@ -18,7 +18,7 @@ use winit::{
 fn get_tiff_from_file() -> Result<Bytes> {
     let buffer = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/resources/small.gtiff"
+        "/../resources/small.gtiff"
     ));
 
     Ok(Bytes::from(buffer.as_slice()))

@@ -73,7 +73,7 @@ impl Pipeline {
 
         let postprocessing_shader = device.create_shader_module(wgpu::include_wgsl!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/resources/shaders/postprocessing_shader.wgsl"
+            "/../resources/shaders/postprocessing_shader.wgsl"
         )));
 
         let post_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -154,7 +154,7 @@ impl Pipeline {
 
         let render_shader = device.create_shader_module(wgpu::include_wgsl!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/resources/shaders/render_shader.wgsl"
+            "/../resources/shaders/render_shader.wgsl"
         )));
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

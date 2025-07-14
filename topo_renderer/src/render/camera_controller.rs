@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, time::Duration};
+use std::collections::VecDeque;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+#[cfg(target_arch = "wasm32")]
+use web_time::Duration;
 
 use winit::{
     event::{DeviceEvent, ElementState, KeyEvent, WindowEvent},

@@ -2,10 +2,7 @@ use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Shaping, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
 };
-use log::debug;
 use wgpu::MultisampleState;
-
-use crate::common::data::Size;
 
 use super::state::PeakInstance;
 
@@ -23,17 +20,18 @@ impl TextState {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
-        physical_size: Size<f32>,
     ) -> Self {
-        let swapchain_format = config.format;
-        let font_system = FontSystem::new();
+        let swapchain_format = config.format.add_srgb_suffix();
+        let mut font_system = FontSystem::new();
+        let font = include_bytes!("../../../resources/Roboto-Regular.ttf");
+        font_system.db_mut().load_font_data(font.to_vec());
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
         let viewport = Viewport::new(device, &cache);
+        // let mut atlas = TextAtlas::new(device, queue, &cache, swapchain_format);
         let mut atlas = TextAtlas::new(device, queue, &cache, swapchain_format);
         let text_renderer =
             TextRenderer::new(&mut atlas, device, MultisampleState::default(), None);
-        debug!("Setting test state buffer size: {physical_size:#?}");
         let text_buffers = vec![];
 
         Self {

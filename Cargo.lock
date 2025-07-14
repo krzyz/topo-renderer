@@ -898,8 +898,9 @@ dependencies = [
 
 [[package]]
 name = "geotiff"
-version = "0.0.2"
-source = "git+https://github.com/georust/geotiff?rev=95172cb80e0eeb0bd6bb5409927aadef34464e9a#95172cb80e0eeb0bd6bb5409927aadef34464e9a"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4eb5c3769ccf6d286c5e3419930a8ccda0040c2c6e20548e125ceb489d184faf"
 dependencies = [
  "geo-types",
  "num-traits",
@@ -3049,6 +3050,7 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-time",
  "wgpu",
  "winit",
 ]

@@ -10,16 +10,22 @@ use std::{fs::File, io::Write, sync::Arc};
 use wasm_bindgen::prelude::*;
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalSize,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     window::{Window, WindowId},
 };
 
 fn get_tiff_from_file() -> Result<Bytes> {
+    /*
     let buffer = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../resources/small.gtiff"
     ));
+    */
+
+    let buffer =
+        include_bytes!("/home/krzyz/data/COP90/COP90_hh/Copernicus_DSM_30_N49_00_E020_00_DEM.tif");
 
     Ok(Bytes::from(buffer.as_slice()))
 }
@@ -47,6 +53,8 @@ struct Application {
     state: Option<State>,
     surface_configured: bool,
     event_loop_proxy: EventLoopProxy<UserEvent>,
+    receiver: Option<futures::channel::oneshot::Receiver<State>>,
+    resized: Option<PhysicalSize<u32>>,
 }
 
 impl ApplicationHandler<UserEvent> for Application {
@@ -99,20 +107,13 @@ impl ApplicationHandler<UserEvent> for Application {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let (sender, mut receiver) = futures::channel::oneshot::channel();
+            let (sender, receiver) = futures::channel::oneshot::channel();
             let event_loop_proxy = self.event_loop_proxy.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let state = State::new(window, event_loop_proxy).await;
                 sender.send(state).unwrap();
             });
-            self.state = Some(
-                receiver
-                    .try_recv()
-                    .into_iter()
-                    .flatten()
-                    .next()
-                    .expect("Unable to initialize state"),
-            );
+            self.receiver = Some(receiver);
         }
     }
 
@@ -122,7 +123,29 @@ impl ApplicationHandler<UserEvent> for Application {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        if self.state.is_none() {
+            if let Some(ref mut receiver) = self.receiver {
+                if let Ok(Some(mut state)) = receiver.try_recv() {
+                    state.window().request_redraw();
+                    if let Some(physical_size) = self.resized.take() {
+                        self.surface_configured = true;
+                        state.resize(physical_size);
+                        state.force_render = true;
+                        // On macos the window needs to be redrawn manually after resizing
+                        state.window().request_redraw();
+                    }
+                    self.state = Some(state);
+                }
+            }
+        }
+
         let Some(state) = &mut self.state else {
+            match event {
+                WindowEvent::Resized(physical_size) => {
+                    self.resized = Some(physical_size);
+                }
+                _ => (),
+            }
             return;
         };
 
@@ -197,6 +220,8 @@ pub fn start() {
             state: None,
             surface_configured: false,
             event_loop_proxy,
+            receiver: None,
+            resized: None,
         })
         .unwrap();
 }

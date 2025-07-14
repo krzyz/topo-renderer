@@ -7,7 +7,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use super::{
     buffer::Buffer,
     data::{PeakInstanceRaw, Vertex},
-    geometry::{generate_icosahedron, transform, Mesh},
+    geometry::{Mesh, generate_icosahedron, transform},
 };
 
 const LAMBDA_0: f32 = 20.13715; // longitude
@@ -237,9 +237,13 @@ impl RenderBuffer {
         queue: &wgpu::Queue,
         geotiff: &GeoTiff,
     ) {
+        debug!("geotiff width: {}", geotiff.raster_width);
+        debug!("geotiff height: {}", geotiff.raster_height);
         let new_vertices_size = ((geotiff.raster_width * geotiff.raster_height
             + self.vertex_offset as usize)
             * std::mem::size_of::<Vertex>()) as u64;
+
+        debug!("New vertices size: {}", new_vertices_size);
 
         if new_vertices_size != self.vertices.raw.size() {
             self.vertices.resize(device, new_vertices_size);

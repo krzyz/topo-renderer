@@ -5,8 +5,8 @@ use std::{
 
 use approx::{AbsDiffEq, UlpsEq};
 use color_eyre::{
-    eyre::{eyre, Result},
     Section,
+    eyre::{Result, eyre},
 };
 
 #[derive(Debug, serde::Deserialize, Clone, PartialEq)]
@@ -47,8 +47,11 @@ impl UlpsEq for Peak {
 
 impl Peak {
     pub fn read_from_lat_lon(lat: i32, lon: i32) -> Result<Vec<Self>> {
-        let f = File::open(format!("data/peaks_{lat}_{lon}.csv"))?;
-        let reader = BufReader::new(f);
+        //let f = File::open(format!("../data/peaks_{lat}_{lon}.csv"))?;
+        //let reader = BufReader::new(f);
+        let reader = BufReader::new(
+            include_bytes!("/home/krzyz/projects/rust/topo2/data/peaks_49_20.csv").as_slice(),
+        );
         Self::read_peaks(reader)
     }
 

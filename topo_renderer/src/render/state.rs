@@ -1,7 +1,7 @@
-use crate::common::data::{pad_256, Size};
+use crate::common::data::{Size, pad_256};
 use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
-use crate::{get_tiff_from_file, UserEvent};
+use crate::{UserEvent, get_tiff_from_file};
 
 use super::camera::Camera;
 use super::camera_controller::CameraController;
@@ -15,9 +15,12 @@ use itertools::Itertools;
 use log::{debug, info};
 use std::f32::consts::PI;
 use std::io::Cursor;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 use wgpu::{TexelCopyBufferInfo, TexelCopyBufferLayout};
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, WindowEvent};
@@ -91,7 +94,7 @@ impl State {
     pub async fn new(window: Arc<Window>, event_loop_proxy: EventLoopProxy<UserEvent>) -> State {
         let (sender, receiver) = channel();
         let size = window.inner_size();
-        let scale_factor = window.scale_factor();
+        // let scale_factor = window.scale_factor();
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -139,16 +142,7 @@ impl State {
             desired_maximum_frame_latency: 2,
         };
 
-        let mut text_state = TextState::new(
-            &device,
-            &queue,
-            &config,
-            (
-                size.width as f32 * scale_factor as f32,
-                size.height as f32 * scale_factor as f32,
-            )
-                .into(),
-        );
+        let mut text_state = TextState::new(&device, &queue, &config);
 
         let mut camera = Camera::default();
         camera.set_eye(Vec3::new(0.0, 1000.0, 0.0));
@@ -448,6 +442,8 @@ impl State {
         if copying_depth_texture {
             let event_loop_proxy = self.event_loop_proxy.clone();
             let new_depth_state = self.new_depth_state();
+
+            #[cfg(not(target_arch = "wasm32"))]
             self.queue.on_submitted_work_done(move || {
                 event_loop_proxy
                     .send_event(UserEvent::StateEvent(StateEvent::FrameFinished(
@@ -455,6 +451,12 @@ impl State {
                     )))
                     .unwrap();
             });
+            #[cfg(target_arch = "wasm32")]
+            event_loop_proxy
+                .send_event(UserEvent::StateEvent(StateEvent::FrameFinished(
+                    new_depth_state,
+                )))
+                .unwrap();
         }
 
         Ok(())

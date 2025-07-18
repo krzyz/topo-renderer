@@ -1,7 +1,4 @@
-use std::{
-    fs::File,
-    io::{self, BufReader},
-};
+use std::io;
 
 use approx::{AbsDiffEq, UlpsEq};
 use color_eyre::{
@@ -46,15 +43,6 @@ impl UlpsEq for Peak {
 }
 
 impl Peak {
-    pub fn read_from_lat_lon(lat: i32, lon: i32) -> Result<Vec<Self>> {
-        //let f = File::open(format!("../data/peaks_{lat}_{lon}.csv"))?;
-        //let reader = BufReader::new(f);
-        let reader = BufReader::new(
-            include_bytes!("/home/krzyz/projects/rust/topo2/data/peaks_49_20.csv").as_slice(),
-        );
-        Self::read_peaks(reader)
-    }
-
     pub fn read_peaks<R: io::Read>(reader: R) -> Result<Vec<Self>> {
         let mut rdr = csv::Reader::from_reader(reader);
         let results = rdr.deserialize().collect::<Vec<_>>();
@@ -79,6 +67,7 @@ impl Peak {
 #[cfg(test)]
 mod tests {
     use approx::assert_ulps_eq;
+    use std::io::BufReader;
 
     use super::*;
 

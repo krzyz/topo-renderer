@@ -1,14 +1,15 @@
 use crate::common::data::{Size, pad_256};
 use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
-use crate::{UserEvent, get_tiff_from_file};
+use crate::{ApplicationSettings, UserEvent};
 
 use super::camera::Camera;
 use super::camera_controller::CameraController;
 use super::data::{PostprocessingUniforms, Uniforms};
 use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
 use super::text::TextState;
-use bytes::Buf;
+use bytes::{Buf, Bytes};
+use color_eyre::Result;
 use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
@@ -61,6 +62,24 @@ impl PeakInstance {
     }
 }
 
+async fn get_tiff_from_http(backend_url: &str) -> Result<Bytes> {
+    Ok(
+        reqwest::get(format!("{backend_url}/dem?latitude=49N&longitude=20E"))
+            .await?
+            .bytes()
+            .await?,
+    )
+}
+
+async fn get_peaks_from_http(backend_url: &str) -> Result<Bytes> {
+    Ok(
+        reqwest::get(format!("{backend_url}/peaks?latitude=49N&longitude=20E"))
+            .await?
+            .bytes()
+            .await?,
+    )
+}
+
 pub struct State {
     event_loop_proxy: EventLoopProxy<UserEvent>,
     surface: wgpu::Surface<'static>,
@@ -82,6 +101,7 @@ pub struct State {
     sender: Sender<Message>,
     receiver: Receiver<Message>,
     depth_state: Option<DepthState>,
+    settings: ApplicationSettings,
 }
 
 impl std::fmt::Debug for State {
@@ -91,7 +111,11 @@ impl std::fmt::Debug for State {
 }
 
 impl State {
-    pub async fn new(window: Arc<Window>, event_loop_proxy: EventLoopProxy<UserEvent>) -> State {
+    pub async fn new(
+        window: Arc<Window>,
+        event_loop_proxy: EventLoopProxy<UserEvent>,
+        settings: ApplicationSettings,
+    ) -> State {
         let (sender, receiver) = channel();
         let size = window.inner_size();
         // let scale_factor = window.scale_factor();
@@ -150,7 +174,13 @@ impl State {
         let camera_controller = CameraController::new(0.01);
 
         info!("Reading geotiff");
-        let gtiff = GeoTiff::read(Cursor::new(get_tiff_from_file().unwrap().as_ref())).unwrap();
+        let gtiff = GeoTiff::read(Cursor::new(
+            get_tiff_from_http(&settings.backend_url)
+                .await
+                .unwrap()
+                .as_ref(),
+        ))
+        .unwrap();
 
         let pixelize_n = 100.0;
         let center_coord = gtiff.model_extent().center();
@@ -159,8 +189,10 @@ impl State {
         let phi_0: f64 = 49.36991; // latitude
 
         info!("Reading peaks");
-        let peaks = Peak::read_from_lat_lon(phi_0.round() as i32, lambda_0.round() as i32)
-            .expect("Unable to read peak data");
+        let peak_bytes = get_peaks_from_http(&settings.backend_url)
+            .await
+            .expect("Unable to get peak data");
+        let peaks = Peak::read_peaks(peak_bytes.reader()).expect("Unable to read peak data");
 
         let peaks = peaks
             .into_iter()
@@ -212,6 +244,7 @@ impl State {
             sender,
             receiver,
             depth_state: None,
+            settings,
         }
     }
 

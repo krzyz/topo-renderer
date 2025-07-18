@@ -3,10 +3,8 @@ extern crate approx;
 pub mod common;
 pub mod render;
 
-use bytes::Bytes;
-use color_eyre::eyre::Result;
 use render::state::{State, StateEvent};
-use std::{fs::File, io::Write, sync::Arc};
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use winit::{
     application::ApplicationHandler,
@@ -16,37 +14,14 @@ use winit::{
     window::{Window, WindowId},
 };
 
-fn get_tiff_from_file() -> Result<Bytes> {
-    /*
-    let buffer = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../resources/small.gtiff"
-    ));
-    */
-
-    let buffer =
-        include_bytes!("/home/krzyz/data/COP90/COP90_hh/Copernicus_DSM_30_N49_00_E020_00_DEM.tif");
-
-    Ok(Bytes::from(buffer.as_slice()))
-}
-
-pub async fn get_tiff_from_http() -> Result<Bytes> {
-    let api_key = "<snip>";
-
-    Ok(reqwest::get(format!("https://portal.opentopography.org/API/globaldem?demtype=NASADEM&south=49.106&north=49.38&west=19.66&east=20.2&outputFormat=GTiff&API_Key={api_key}"))
-        .await?.bytes().await?)
-}
-
-pub async fn write_tiff_from_http() -> Result<()> {
-    let tiff_bytes = get_tiff_from_http().await?;
-    let mut file = File::create("small.tiff")?;
-    file.write_all(&tiff_bytes)?;
-    Ok(())
-}
-
 #[derive(Debug)]
 pub enum UserEvent {
     StateEvent(StateEvent),
+}
+
+#[derive(Debug, Clone)]
+pub struct ApplicationSettings {
+    backend_url: String,
 }
 
 struct Application {
@@ -55,6 +30,7 @@ struct Application {
     event_loop_proxy: EventLoopProxy<UserEvent>,
     receiver: Option<futures::channel::oneshot::Receiver<State>>,
     resized: Option<PhysicalSize<u32>>,
+    settings: ApplicationSettings,
 }
 
 impl ApplicationHandler<UserEvent> for Application {
@@ -103,14 +79,16 @@ impl ApplicationHandler<UserEvent> for Application {
             self.state = Some(pollster::block_on(State::new(
                 window,
                 self.event_loop_proxy.clone(),
+                self.settings.clone(),
             )));
         }
         #[cfg(target_arch = "wasm32")]
         {
             let (sender, receiver) = futures::channel::oneshot::channel();
             let event_loop_proxy = self.event_loop_proxy.clone();
+            let settings = self.settings.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let state = State::new(window, event_loop_proxy).await;
+                let state = State::new(window, event_loop_proxy, settings).await;
                 sender.send(state).unwrap();
             });
             self.receiver = Some(receiver);
@@ -215,6 +193,11 @@ impl ApplicationHandler<UserEvent> for Application {
 pub fn start() {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
     let event_loop_proxy = event_loop.create_proxy();
+
+    let settings = ApplicationSettings {
+        backend_url: env!("TOPO_backend_url").to_string(),
+    };
+
     event_loop
         .run_app(&mut Application {
             state: None,
@@ -222,6 +205,7 @@ pub fn start() {
             event_loop_proxy,
             receiver: None,
             resized: None,
+            settings,
         })
         .unwrap();
 }

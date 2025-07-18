@@ -5,18 +5,20 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.4"
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { workspace = true }
 strum = { version = "0.27.1", features = ["derive"] }
 tokio = { version = "1.46.1", features = ["fs", "rt-multi-thread"] }
-tower-http = { version = "0.6.6", features = ["compression-zstd"] }
+tower-http = { version = "0.6.6", features = ["compression-zstd", "cors"] }
 tower = "0.5.2"
 http = "1.3.1"
 tokio-util = "0.7.15"
 http-body-util = { version = "0.1.3", features = ["full"] }
 http-body = "1.0.1"
-log = "0.4.27"
+log = { workspace = true }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
+config = { workspace = true }
+color-eyre = { workspace = true }
 
 [dev-dependencies]
 serde_json = "1.0.140"

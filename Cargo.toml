@@ -1,3 +1,9 @@
 [workspace]
 resolver = "3"
 members = [ "topo-backend", "topo-renderer"]
+
+[workspace.dependencies]
+log = "0.4.27"
+serde = { version = "1.0.219", features = ["derive"] }
+color-eyre = "0.6.4"
+config = "0.15.13"

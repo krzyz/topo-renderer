@@ -7,7 +7,7 @@ use super::camera::Camera;
 use super::camera_controller::CameraController;
 use super::data::{PostprocessingUniforms, Uniforms};
 use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
-use super::text::TextState;
+use super::text::{LabelId, TextState};
 use bytes::{Buf, Bytes};
 use color_eyre::Result;
 use geotiff::GeoTiff;
@@ -101,7 +101,6 @@ pub struct State {
     sender: Sender<Message>,
     receiver: Receiver<Message>,
     depth_state: Option<DepthState>,
-    settings: ApplicationSettings,
 }
 
 impl std::fmt::Debug for State {
@@ -244,7 +243,6 @@ impl State {
             sender,
             receiver,
             depth_state: None,
-            settings,
         }
     }
 
@@ -373,7 +371,9 @@ impl State {
                                     Some(_) => peak.visible = true,
                                     None => peak.visible = false,
                                 })
-                                .filter_map(|(i, _, vis_pos)| vis_pos.map(|pos| (i as u32, pos)))
+                                .filter_map(|(i, _, vis_pos)| {
+                                    vis_pos.map(|pos| (LabelId(i as u32), pos))
+                                })
                                 .collect::<Vec<_>>()
                         };
 

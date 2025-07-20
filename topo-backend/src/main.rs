@@ -13,6 +13,7 @@ use strum::EnumString;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use tower::ServiceBuilder;
+use tower_http::CompressionLevel;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -118,7 +119,7 @@ async fn get_peaks(
     log::info!("Opening file {}", file_name.display());
 
     let file = File::open(file_name).await.expect("file missing");
-    let stream = ReaderStream::new(file);
+    let stream = ReaderStream::with_capacity(file, 256 * 1024);
     let body = Body::from_stream(stream);
 
     ([(header::CONTENT_TYPE, "text/csv")], body)
@@ -173,8 +174,14 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/peaks", get(get_peaks))
+        .layer(
+            ServiceBuilder::new().layer(
+                CompressionLayer::new()
+                    .zstd(true)
+                    .quality(CompressionLevel::Fastest),
+            ),
+        )
         .route("/dem", get(get_dem))
-        .layer(ServiceBuilder::new().layer(CompressionLayer::new()))
         .layer(cors)
         .with_state(state);
 

@@ -35,3 +35,6 @@ web-time = "1.0.1"
 
 [build-dependencies]
 config = { workspace = true }
+
+[dev-dependencies]
+rstest = "0.25.0"

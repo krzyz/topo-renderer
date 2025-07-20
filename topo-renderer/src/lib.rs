@@ -5,6 +5,7 @@ pub mod render;
 
 use render::state::{State, StateEvent};
 use std::sync::Arc;
+use tokio::runtime::Runtime;
 use wasm_bindgen::prelude::*;
 use winit::{
     application::ApplicationHandler,
@@ -75,8 +76,9 @@ impl ApplicationHandler<UserEvent> for Application {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let rt = Runtime::new().unwrap();
             env_logger::init();
-            self.state = Some(pollster::block_on(State::new(
+            self.state = Some(rt.block_on(State::new(
                 window,
                 self.event_loop_proxy.clone(),
                 self.settings.clone(),

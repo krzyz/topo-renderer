@@ -4,6 +4,7 @@ pub mod camera;
 pub mod camera_controller;
 pub mod data;
 pub mod geometry;
+pub mod lines;
 pub mod peaks;
 pub mod pipeline;
 pub mod render_buffer;

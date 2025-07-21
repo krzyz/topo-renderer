@@ -1,7 +1,7 @@
 use geotiff::GeoTiff;
 use wgpu::RenderPass;
 
-use crate::common::data::{pad_256, Size};
+use crate::common::data::{Size, pad_256};
 
 use super::{
     bound_texture_view::BoundTextureView,
@@ -22,6 +22,7 @@ pub struct RenderEnvironment {
     first_pass_pipeline: Pipeline,
     postprocessing_pipeline: Pipeline,
     texture_view: BoundTextureView,
+    postprocessing_depth_texture_view: BoundTextureView,
     render_buffer: RenderBuffer,
     depth_read_buffer: Buffer,
     format: wgpu::TextureFormat,
@@ -33,6 +34,8 @@ impl RenderEnvironment {
         let first_pass_pipeline = Pipeline::create_first_pass_pipeline(device, format);
 
         let texture_view = Self::create_texture_view(device, format, target_size);
+        let postprocessing_depth_texture_view =
+            Self::create_postprocessing_depth_texture_view(device, target_size);
 
         let postprocessing_pipeline = Pipeline::create_postprocessing_pipeline(
             device,
@@ -53,6 +56,7 @@ impl RenderEnvironment {
             first_pass_pipeline,
             postprocessing_pipeline,
             texture_view,
+            postprocessing_depth_texture_view,
             render_buffer: RenderBuffer::new(device),
             depth_read_buffer,
             format,
@@ -88,9 +92,26 @@ impl RenderEnvironment {
             &device,
             (target_size.width, target_size.height),
             "depth_texture",
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
         );
 
         BoundTextureView::create(device, vec![render_texture, depth_texture])
+    }
+
+    fn create_postprocessing_depth_texture_view(
+        device: &wgpu::Device,
+        target_size: Size<u32>,
+    ) -> BoundTextureView {
+        let depth_texture = Texture::create_depth_texture(
+            &device,
+            (target_size.width, target_size.height),
+            "postprocessing_depth_texture",
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+
+        BoundTextureView::create(device, vec![depth_texture])
     }
 
     fn update_texture_view(
@@ -101,11 +122,29 @@ impl RenderEnvironment {
     ) {
         if self.target_size.height != size.height || self.target_size.width != size.width {
             self.texture_view = Self::create_texture_view(device, format, size);
+            self.postprocessing_depth_texture_view =
+                Self::create_postprocessing_depth_texture_view(device, size);
             self.depth_read_buffer
                 .resize(device, (pad_256(size.width) * size.height * 4) as u64);
 
             self.target_size = size;
         }
+    }
+
+    pub fn get_postprocessing_depth_stencil(
+        &self,
+    ) -> Option<wgpu::RenderPassDepthStencilAttachment> {
+        Some(wgpu::RenderPassDepthStencilAttachment {
+            view: self.postprocessing_depth_texture_view.get_textures()[0].get_view(),
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(0.0),
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(0),
+                store: wgpu::StoreOp::Store,
+            }),
+        })
     }
 
     pub fn update(
@@ -225,7 +264,7 @@ impl RenderEnvironment {
                             store: wgpu::StoreOp::Store,
                         },
                     })],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: self.get_postprocessing_depth_stencil(),
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 }));

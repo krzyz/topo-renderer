@@ -57,7 +57,7 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    out.clip_position = vec4<f32>(positions[v_index], 0.0, 1.0);
+    out.clip_position = vec4<f32>(positions[v_index], 1.0/4096, 1.0);
     out.uv = uvs[v_index];
 
     return out;

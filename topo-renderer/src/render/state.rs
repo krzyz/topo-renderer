@@ -1,11 +1,13 @@
 use crate::common::data::{Size, pad_256};
 use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
+use crate::render::pipeline::Pipeline;
 use crate::{ApplicationSettings, UserEvent};
 
 use super::camera::Camera;
 use super::camera_controller::CameraController;
 use super::data::{PostprocessingUniforms, Uniforms};
+use super::lines::LineRenderer;
 use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
 use super::text::{LabelId, TextState};
 use bytes::{Buf, Bytes};
@@ -13,7 +15,7 @@ use color_eyre::Result;
 use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
-use log::{debug, info};
+use log::debug;
 use std::f32::consts::PI;
 use std::io::Cursor;
 use std::sync::Arc;
@@ -96,6 +98,7 @@ pub struct State {
     postprocessing_uniforms: PostprocessingUniforms,
     render_environment: RenderEnvironment,
     text_state: TextState,
+    line_renderer: LineRenderer,
     window: Arc<Window>,
     prev_instant: Instant,
     sender: Sender<Message>,
@@ -165,14 +168,11 @@ impl State {
             desired_maximum_frame_latency: 2,
         };
 
-        let mut text_state = TextState::new(&device, &queue, &config);
-
         let mut camera = Camera::default();
         camera.set_eye(Vec3::new(0.0, 1000.0, 0.0));
         camera.set_direction(0.75 * PI);
         let camera_controller = CameraController::new(0.01);
 
-        info!("Reading geotiff");
         let gtiff = GeoTiff::read(Cursor::new(
             get_tiff_from_http(&settings.backend_url)
                 .await
@@ -187,7 +187,6 @@ impl State {
         let lambda_0: f64 = 20.13715; // longitude
         let phi_0: f64 = 49.36991; // latitude
 
-        info!("Reading peaks");
         let peak_bytes = get_peaks_from_http(&settings.backend_url)
             .await
             .expect("Unable to get peak data");
@@ -217,11 +216,21 @@ impl State {
         let render_environment =
             RenderEnvironment::new(&device, format.add_srgb_suffix(), size.into());
 
+        let mut text_state = TextState::new(
+            &device,
+            &queue,
+            &config,
+            Pipeline::get_postprocessing_depth_stencil_state(),
+        );
+
         let prev_instant = Instant::now();
 
         text_state.prepare_peak_labels(&peaks);
 
-        info!("Finished State::new()");
+        let mut line_renderer = LineRenderer::new(&device, format);
+        line_renderer.prepare(&device, &queue, vec![]);
+
+        debug!("Finished State::new()");
         Self {
             event_loop_proxy,
             surface,
@@ -238,6 +247,7 @@ impl State {
             postprocessing_uniforms,
             render_environment,
             text_state,
+            line_renderer,
             window,
             prev_instant,
             sender,
@@ -282,6 +292,9 @@ impl State {
                     height: self.config.height,
                 },
             );
+
+            self.line_renderer
+                .update_resolution(self.config.width, self.config.height);
 
             self.render_environment.update(
                 &self.device,
@@ -377,8 +390,11 @@ impl State {
                                 .collect::<Vec<_>>()
                         };
 
-                        self.text_state
-                            .prepare(&self.device, &self.queue, peak_labels);
+                        let laid_out_labels =
+                            self.text_state
+                                .prepare(&self.device, &self.queue, peak_labels);
+                        self.line_renderer
+                            .prepare(&self.device, &self.queue, laid_out_labels);
                         changed = true;
                     }
                     self.render_environment.get_depth_read_buffer_mut().unmap();
@@ -433,6 +449,7 @@ impl State {
             let mut pass = self
                 .render_environment
                 .render(&view, &mut encoder, self.size.into());
+            self.line_renderer.render(&mut pass);
             self.text_state.render(&mut pass);
         }
 

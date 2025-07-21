@@ -7,7 +7,9 @@ use std::collections::BTreeSet;
 use std::ops::Bound::{Included, Unbounded};
 use wgpu::MultisampleState;
 
-const LINE_HEIGHT: f32 = 16.0;
+pub const LINE_HEIGHT: f32 = 16.0;
+pub const LINE_PADDING: f32 = 4.0;
+pub const LABEL_PADDING_LEFT: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LabelId(pub u32);
@@ -45,6 +47,14 @@ impl LabelEdge {
     }
 }
 
+pub struct LabelLayout {
+    pub label_x: f32,
+    pub label_y: f32,
+    pub label_width: f32,
+    pub peak_x: f32,
+    pub peak_y: f32,
+}
+
 pub struct TextState {
     pub font_system: FontSystem,
     pub swash_cache: SwashCache,
@@ -59,6 +69,7 @@ impl TextState {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
+        depth_stencil: Option<wgpu::DepthStencilState>,
     ) -> Self {
         let swapchain_format = config.format.add_srgb_suffix();
         let mut font_system = FontSystem::new();
@@ -69,8 +80,12 @@ impl TextState {
         let viewport = Viewport::new(device, &cache);
         // let mut atlas = TextAtlas::new(device, queue, &cache, swapchain_format);
         let mut atlas = TextAtlas::new(device, queue, &cache, swapchain_format);
-        let text_renderer =
-            TextRenderer::new(&mut atlas, device, MultisampleState::default(), None);
+        let text_renderer = TextRenderer::new(
+            &mut atlas,
+            device,
+            MultisampleState::default(),
+            depth_stencil,
+        );
         let labels = vec![];
 
         Self {
@@ -118,25 +133,26 @@ impl TextState {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         peak_labels: Vec<(LabelId, (u32, u32))>,
-    ) {
-        let text_areas = layout_labels(
-            peak_labels,
-            |label| self.labels[label.0 as usize].width,
-            LINE_HEIGHT,
-        )
-        .into_iter()
-        .map(|(i, (x, y))| TextArea {
-            buffer: &self.labels[i.0 as usize].buffer,
-            left: x,
-            top: y,
-            scale: 1.0,
-            bounds: TextBounds::default(),
-            default_color: glyphon::Color::rgb(0, 0, 0),
-            custom_glyphs: &[],
-        })
-        .collect::<Vec<_>>();
+    ) -> Vec<LabelLayout> {
+        let laid_out_labels = layout_labels(
+            peak_labels.clone(),
+            |id| self.labels[id.0 as usize].width,
+            LINE_HEIGHT + LINE_PADDING,
+        );
+        let text_areas = laid_out_labels
+            .iter()
+            .map(|&(id, (x, y))| TextArea {
+                buffer: &self.labels[id.0 as usize].buffer,
+                left: x + LABEL_PADDING_LEFT,
+                top: y,
+                scale: 1.0,
+                bounds: TextBounds::default(),
+                default_color: glyphon::Color::rgb(0, 0, 0),
+                custom_glyphs: &[],
+            })
+            .collect::<Vec<_>>();
         self.text_renderer
-            .prepare(
+            .prepare_with_depth(
                 device,
                 queue,
                 &mut self.font_system,
@@ -144,8 +160,23 @@ impl TextState {
                 &mut self.viewport,
                 text_areas,
                 &mut self.swash_cache,
+                |_| 100.0 / 4096.0,
             )
             .unwrap();
+
+        laid_out_labels
+            .into_iter()
+            .zip(peak_labels.into_iter())
+            .map(
+                |((_, (label_x, label_y)), (id, (peak_x, peak_y)))| LabelLayout {
+                    label_x,
+                    label_y,
+                    label_width: self.labels[id.0 as usize].width,
+                    peak_x: peak_x as f32,
+                    peak_y: peak_y as f32,
+                },
+            )
+            .collect()
     }
 }
 

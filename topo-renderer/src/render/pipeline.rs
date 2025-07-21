@@ -24,6 +24,16 @@ impl Pipeline {
         &self.uniform_bind_group
     }
 
+    pub fn get_postprocessing_depth_stencil_state() -> Option<wgpu::DepthStencilState> {
+        Some(wgpu::DepthStencilState {
+            format: Texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Greater,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        })
+    }
+
     pub fn create_postprocessing_pipeline(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -86,7 +96,7 @@ impl Pipeline {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Self::get_postprocessing_depth_stencil_state(),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,

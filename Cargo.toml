@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = [ "topo-backend", "topo-renderer"]
+members = [ "topo-backend", "topo-common", "topo-renderer"]
 
 [workspace.dependencies]
 log = "0.4.27"

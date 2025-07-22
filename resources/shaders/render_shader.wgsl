@@ -17,10 +17,6 @@ struct VertexInput {
     @location(1) normal: vec3<f32>,
 }
 
-struct InstanceInput {
-    @location(2) position: vec3<f32>,
-}
-
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
@@ -31,11 +27,10 @@ struct VertexOutput {
 @vertex
 fn vs_main(
     model: VertexInput,
-    instance: InstanceInput,
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    let position = model.position + instance.position;
+    let position = model.position;
 
     //let view_normal = uniforms.normal_projection * vec4<f32>(model.normal, 1.0);
 

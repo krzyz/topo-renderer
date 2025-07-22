@@ -3,8 +3,9 @@ use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Shaping, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound::{Included, Unbounded};
+use topo_common::GeoLocation;
 use wgpu::MultisampleState;
 
 pub const LINE_HEIGHT: f32 = 16.0;
@@ -61,7 +62,7 @@ pub struct TextState {
     pub viewport: Viewport,
     pub atlas: TextAtlas,
     pub text_renderer: TextRenderer,
-    pub labels: Vec<Label>,
+    pub labels: BTreeMap<GeoLocation, Vec<Label>>,
 }
 
 impl TextState {
@@ -86,7 +87,7 @@ impl TextState {
             MultisampleState::default(),
             depth_stencil,
         );
-        let labels = vec![];
+        let labels = BTreeMap::new();
 
         Self {
             font_system,
@@ -104,45 +105,50 @@ impl TextState {
             .unwrap();
     }
 
-    pub fn prepare_peak_labels(&mut self, peaks: &Vec<PeakInstance>) {
+    pub fn prepare_peak_labels(&mut self, location: GeoLocation, peaks: &Vec<PeakInstance>) {
         let metric = Metrics::new(12.0, LINE_HEIGHT as f32);
-        self.labels = peaks
-            .iter()
-            .map(|peak| {
-                let mut buffer = Buffer::new(&mut self.font_system, metric);
-                buffer.set_size(&mut self.font_system, None, None);
-                buffer.set_text(
-                    &mut self.font_system,
-                    peak.name.as_str(),
-                    &Attrs::new().family(Family::SansSerif),
-                    Shaping::Advanced,
-                );
-                buffer.shape_until_scroll(&mut self.font_system, false);
-                let width = buffer
-                    .layout_runs()
-                    .next()
-                    .expect("Unable to layout peak label")
-                    .line_w;
-                Label { buffer, width }
-            })
-            .collect::<Vec<_>>();
+        self.labels.insert(
+            location,
+            peaks
+                .iter()
+                .map(|peak| {
+                    let mut buffer = Buffer::new(&mut self.font_system, metric);
+                    buffer.set_size(&mut self.font_system, None, None);
+                    buffer.set_text(
+                        &mut self.font_system,
+                        peak.name.as_str(),
+                        &Attrs::new().family(Family::SansSerif),
+                        Shaping::Advanced,
+                    );
+                    buffer.shape_until_scroll(&mut self.font_system, false);
+                    let width = buffer
+                        .layout_runs()
+                        .next()
+                        .expect("Unable to layout peak label")
+                        .line_w;
+                    Label { buffer, width }
+                })
+                .collect::<Vec<_>>(),
+        );
     }
 
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        location: &GeoLocation,
         peak_labels: Vec<(LabelId, (u32, u32))>,
     ) -> Vec<LabelLayout> {
+        let labels = self.labels.get(location).unwrap();
         let laid_out_labels = layout_labels(
             peak_labels.clone(),
-            |id| self.labels[id.0 as usize].width,
+            |id| labels[id.0 as usize].width,
             LINE_HEIGHT + LINE_PADDING,
         );
         let text_areas = laid_out_labels
             .iter()
             .map(|&(id, (x, y))| TextArea {
-                buffer: &self.labels[id.0 as usize].buffer,
+                buffer: &labels[id.0 as usize].buffer,
                 left: x + LABEL_PADDING_LEFT,
                 top: y,
                 scale: 1.0,
@@ -171,7 +177,7 @@ impl TextState {
                 |((_, (label_x, label_y)), (id, (peak_x, peak_y)))| LabelLayout {
                     label_x,
                     label_y,
-                    label_width: self.labels[id.0 as usize].width,
+                    label_width: labels[id.0 as usize].width,
                     peak_x: peak_x as f32,
                     peak_y: peak_y as f32,
                 },

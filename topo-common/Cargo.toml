@@ -1,0 +1,11 @@
+[package]
+name = "topo-common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true }
+strum = { version = "0.27.1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0.140"

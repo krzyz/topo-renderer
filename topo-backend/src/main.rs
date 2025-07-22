@@ -5,49 +5,15 @@ use axum::{Router, routing::get};
 use color_eyre::Result;
 use config::Config;
 use http::{Method, header};
-use serde::de::Error;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use std::path::Path;
-use std::str::FromStr;
-use strum::EnumString;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
+use topo_common::{GeoLocation, LatitudeDirection, LongitudeDirection};
 use tower::ServiceBuilder;
 use tower_http::CompressionLevel;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumString)]
-enum LatitudeDirection {
-    S,
-    N,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumString)]
-enum LongitudeDirection {
-    W,
-    E,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Latitude {
-    degree: i32,
-    direction: LatitudeDirection,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Longitude {
-    degree: i32,
-    direction: LongitudeDirection,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-struct GeoLocation {
-    #[serde(deserialize_with = "latitude_from_str")]
-    latitude: Latitude,
-    #[serde(deserialize_with = "longitude_from_str")]
-    longitude: Longitude,
-}
 
 #[derive(Clone, Deserialize)]
 struct AppState {
@@ -60,42 +26,6 @@ impl AppState {
 
         Ok(app_state)
     }
-}
-
-fn latitude_from_str<'de, D>(deserializer: D) -> Result<Latitude, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let (degree, direction): (i32, LatitudeDirection) =
-        degree_with_direction_from_str(deserializer)?;
-    Ok(Latitude { degree, direction })
-}
-
-fn longitude_from_str<'de, D>(deserializer: D) -> Result<Longitude, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let (degree, direction): (i32, LongitudeDirection) =
-        degree_with_direction_from_str(deserializer)?;
-    Ok(Longitude { degree, direction })
-}
-
-fn degree_with_direction_from_str<'de, D, T>(deserializer: D) -> Result<(i32, T), D::Error>
-where
-    T: FromStr,
-    <T as FromStr>::Err: std::fmt::Display,
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    if s.is_empty() {
-        return Err("Can't deserialize empty string to degree and direction")
-            .map_err(D::Error::custom);
-    }
-    let (deg_str, dir_str) = s.split_at(s.len() - 1);
-    Ok((
-        deg_str.parse::<i32>().map_err(D::Error::custom)?,
-        T::from_str(dir_str).map_err(D::Error::custom)?,
-    ))
 }
 
 async fn get_peaks(
@@ -191,29 +121,4 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn deserialize_geo_location_query() {
-        let json = r#"{"latitude": "49N", "longitude": "20E"}"#;
-        let query: GeoLocation = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            query,
-            GeoLocation {
-                latitude: Latitude {
-                    degree: 49,
-                    direction: LatitudeDirection::N,
-                },
-
-                longitude: Longitude {
-                    degree: 20,
-                    direction: LongitudeDirection::E,
-                },
-            },
-        )
-    }
 }

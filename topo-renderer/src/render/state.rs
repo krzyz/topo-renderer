@@ -8,7 +8,7 @@ use super::camera::Camera;
 use super::camera_controller::CameraController;
 use super::data::{PostprocessingUniforms, Uniforms};
 use super::lines::LineRenderer;
-use super::render_environment::{GeoTiffUpdate, RenderEnvironment};
+use super::render_environment::RenderEnvironment;
 use super::text::{LabelId, TextState};
 use bytes::{Buf, Bytes};
 use color_eyre::Result;
@@ -16,12 +16,14 @@ use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
 use log::debug;
+use std::collections::BTreeMap;
 use std::f32::consts::PI;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+use topo_common::{GeoLocation, LatitudeDirection, LongitudeDirection};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 use wgpu::{TexelCopyBufferInfo, TexelCopyBufferLayout};
@@ -45,6 +47,8 @@ pub enum StateEvent {
 
 pub enum Message {
     DepthBufferReady(DepthState),
+    TerrainQueued(GeoLocation),
+    TerrainReceived((GeoLocation, GeoTiff, Vec<PeakInstance>)),
 }
 
 #[derive(Clone)]
@@ -64,22 +68,24 @@ impl PeakInstance {
     }
 }
 
-async fn get_tiff_from_http(backend_url: &str) -> Result<Bytes> {
-    Ok(
-        reqwest::get(format!("{backend_url}/dem?latitude=49N&longitude=20E"))
-            .await?
-            .bytes()
-            .await?,
-    )
+async fn get_tiff_from_http(backend_url: &str, location: GeoLocation) -> Result<Bytes> {
+    Ok(reqwest::get(format!(
+        "{backend_url}/dem?{}",
+        location.to_request_params()
+    ))
+    .await?
+    .bytes()
+    .await?)
 }
 
-async fn get_peaks_from_http(backend_url: &str) -> Result<Bytes> {
-    Ok(
-        reqwest::get(format!("{backend_url}/peaks?latitude=49N&longitude=20E"))
-            .await?
-            .bytes()
-            .await?,
-    )
+async fn get_peaks_from_http(backend_url: &str, location: GeoLocation) -> Result<Bytes> {
+    Ok(reqwest::get(format!(
+        "{backend_url}/peaks?{}",
+        location.to_request_params()
+    ))
+    .await?
+    .bytes()
+    .await?)
 }
 
 pub struct State {
@@ -92,8 +98,7 @@ pub struct State {
     size: PhysicalSize<u32>,
     camera: Camera,
     camera_controller: CameraController,
-    gtiff: GeoTiff,
-    peaks: Vec<PeakInstance>,
+    peaks: BTreeMap<GeoLocation, Vec<PeakInstance>>,
     uniforms: Uniforms,
     postprocessing_uniforms: PostprocessingUniforms,
     render_environment: RenderEnvironment,
@@ -104,6 +109,9 @@ pub struct State {
     sender: Sender<Message>,
     receiver: Receiver<Message>,
     depth_state: Option<DepthState>,
+    settings: ApplicationSettings,
+    lambda_0: f32,
+    phi_0: f32,
 }
 
 impl std::fmt::Debug for State {
@@ -173,50 +181,31 @@ impl State {
         camera.set_direction(0.75 * PI);
         let camera_controller = CameraController::new(0.01);
 
-        let gtiff = GeoTiff::read(Cursor::new(
-            get_tiff_from_http(&settings.backend_url)
-                .await
-                .unwrap()
-                .as_ref(),
-        ))
-        .unwrap();
-
         let pixelize_n = 100.0;
-        let center_coord = gtiff.model_extent().center();
-        debug!("Center coord: {center_coord:#?}");
-        let lambda_0: f64 = 20.13715; // longitude
-        let phi_0: f64 = 49.36991; // latitude
+        let lambda_0: f32 = 20.13715; // longitude
+        let phi_0: f32 = 49.36991; // latitude
 
-        let peak_bytes = get_peaks_from_http(&settings.backend_url)
-            .await
-            .expect("Unable to get peak data");
-        let peaks = Peak::read_peaks(peak_bytes.reader()).expect("Unable to read peak data");
+        let location = GeoLocation {
+            latitude: topo_common::Latitude {
+                degree: phi_0.floor() as i32,
+                direction: LatitudeDirection::N,
+            },
+            longitude: topo_common::Longitude {
+                degree: lambda_0.floor() as i32,
+                direction: LongitudeDirection::E,
+            },
+        };
 
-        let peaks = peaks
-            .into_iter()
-            .filter_map(|p| {
-                gtiff
-                    .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
-                    .map(|h| {
-                        PeakInstance::new(
-                            transform(h, p.longitude, p.latitude, lambda_0 as f32, phi_0 as f32),
-                            p.name,
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
+        sender.send(Message::TerrainQueued(location)).unwrap();
 
-        debug!("Number of peaks: {}", peaks.len());
-
-        let h = gtiff.get_value_at(&(lambda_0, phi_0).into(), 0).unwrap();
         let bounds = (size.width as f32, size.height as f32).into();
-        let uniforms = Uniforms::new(&camera, bounds, lambda_0 as f32, phi_0 as f32, h);
+        let uniforms = Uniforms::new(&camera, bounds, lambda_0, phi_0, 0.0);
         let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
 
         let render_environment =
             RenderEnvironment::new(&device, format.add_srgb_suffix(), size.into());
 
-        let mut text_state = TextState::new(
+        let text_state = TextState::new(
             &device,
             &queue,
             &config,
@@ -224,8 +213,6 @@ impl State {
         );
 
         let prev_instant = Instant::now();
-
-        text_state.prepare_peak_labels(&peaks);
 
         let mut line_renderer = LineRenderer::new(&device, format);
         line_renderer.prepare(&device, &queue, vec![]);
@@ -241,8 +228,7 @@ impl State {
             size,
             camera,
             camera_controller,
-            gtiff,
-            peaks,
+            peaks: BTreeMap::new(),
             uniforms,
             postprocessing_uniforms,
             render_environment,
@@ -253,6 +239,9 @@ impl State {
             sender,
             receiver,
             depth_state: None,
+            settings,
+            lambda_0,
+            phi_0,
         }
     }
 
@@ -282,6 +271,8 @@ impl State {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             debug!("Updating size");
+            // TODO: Might be a better way to do this; buffer gets touched during resize
+            // so we unmap it so that there's no chance of crashing
             self.render_environment.get_depth_read_buffer_mut().unmap();
             self.config.width = new_size.width;
             self.config.height = new_size.height;
@@ -302,8 +293,6 @@ impl State {
                 &self.device,
                 &self.queue,
                 new_size.into(),
-                GeoTiffUpdate::Old(&self.gtiff),
-                &self.peaks,
                 &self.uniforms,
                 &self.postprocessing_uniforms,
             );
@@ -317,20 +306,22 @@ impl State {
             .poll(wgpu::PollType::Poll)
             .expect("Error polling");
 
+        let bounds = (self.size.width as f32, self.size.height as f32).into();
+
         if let Some(mes) = self.receiver.try_iter().last() {
             match mes {
                 Message::DepthBufferReady(depth_state) => {
                     let depth_buffer = self.render_environment.get_depth_read_buffer();
                     if depth_state.size == self.size.into() && depth_buffer.mapped {
-                        let peak_labels = {
-                            self.depth_state = Some(depth_state);
-                            let depth_buffer_view = depth_buffer.raw.slice(..).get_mapped_range();
-                            let projection = depth_state.camera.build_view_proj_matrix(
-                                depth_state.size.width as f32,
-                                depth_state.size.height as f32,
-                            );
+                        let depth_buffer_view = depth_buffer.raw.slice(..).get_mapped_range();
+                        let projection = depth_state.camera.build_view_proj_matrix(
+                            depth_state.size.width as f32,
+                            depth_state.size.height as f32,
+                        );
+                        self.depth_state = Some(depth_state);
 
-                            self.peaks
+                        self.peaks.iter_mut().for_each(|(location, peaks)| {
+                            let peak_labels = peaks
                                 .iter_mut()
                                 .enumerate()
                                 .map(|(i, peak)| {
@@ -385,17 +376,56 @@ impl State {
                                 .filter_map(|(i, _, vis_pos)| {
                                     vis_pos.map(|pos| (LabelId(i as u32), pos))
                                 })
-                                .collect::<Vec<_>>()
-                        };
+                                .collect::<Vec<_>>();
 
-                        let laid_out_labels =
-                            self.text_state
-                                .prepare(&self.device, &self.queue, peak_labels);
-                        self.line_renderer
-                            .prepare(&self.device, &self.queue, laid_out_labels);
-                        changed = true;
+                            let laid_out_labels = self.text_state.prepare(
+                                &self.device,
+                                &self.queue,
+                                location,
+                                peak_labels,
+                            );
+                            self.line_renderer
+                                .prepare(&self.device, &self.queue, laid_out_labels);
+                            changed = true;
+                        });
                     }
                     self.render_environment.get_depth_read_buffer_mut().unmap();
+                }
+                Message::TerrainQueued(location) => {
+                    let backend_url = self.settings.backend_url.clone();
+                    let sender = self.sender.clone();
+                    let lambda_0 = self.lambda_0 as f32;
+                    let phi_0 = self.phi_0 as f32;
+                    let future = async move {
+                        let (gtiff, peaks) =
+                            Self::fetch_dem_data(&backend_url, location, lambda_0, phi_0)
+                                .await
+                                .unwrap();
+
+                        sender
+                            .send(Message::TerrainReceived((location, gtiff, peaks)))
+                            .unwrap();
+                    };
+                    #[cfg(not(target_arch = "wasm32"))]
+                    tokio::spawn(future);
+                    #[cfg(target_arch = "wasm32")]
+                    wasm_bindgen_futures::spawn_local(future);
+                }
+
+                Message::TerrainReceived((location, gtiff, peaks)) => {
+                    let h = gtiff
+                        .get_value_at(&(self.lambda_0 as f64, self.phi_0 as f64).into(), 0)
+                        .unwrap();
+
+                    self.uniforms =
+                        Uniforms::new(&self.camera, bounds, self.lambda_0, self.phi_0, h);
+
+                    self.text_state.prepare_peak_labels(location, &peaks);
+
+                    self.peaks.insert(location, peaks);
+
+                    self.add_terrain(location, &gtiff);
+                    changed = true;
                 }
             }
         }
@@ -404,7 +434,6 @@ impl State {
         let time_delta = current_instant - self.prev_instant;
         self.prev_instant = current_instant;
 
-        let bounds = (self.size.width as f32, self.size.height as f32).into();
         let camera_changed = self
             .camera_controller
             .update_camera(&mut self.camera, time_delta);
@@ -415,8 +444,6 @@ impl State {
                 &self.device,
                 &self.queue,
                 self.size.into(),
-                GeoTiffUpdate::Old(&self.gtiff),
-                &self.peaks,
                 &self.uniforms,
                 &self.postprocessing_uniforms,
             );
@@ -456,7 +483,6 @@ impl State {
                 .depth_state
                 .is_none_or(|depth_state| depth_state != self.new_depth_state()))
         {
-            debug!("Copying");
             copying_depth_texture = true;
             let depth_texture = self
                 .render_environment
@@ -521,11 +547,46 @@ impl State {
     pub fn handle_event(&mut self, event: StateEvent) {
         match event {
             StateEvent::FrameFinished(new_depth_state) => {
-                debug!("Render map");
                 self.render_environment
                     .get_depth_read_buffer_mut()
                     .map(self.sender.clone(), new_depth_state);
             }
         }
+    }
+
+    async fn fetch_dem_data(
+        backend_url: &str,
+        location: GeoLocation,
+        lambda_0: f32,
+        phi_0: f32,
+    ) -> Result<(GeoTiff, Vec<PeakInstance>)> {
+        let geotiff = GeoTiff::read(Cursor::new(
+            get_tiff_from_http(backend_url, location).await?.as_ref(),
+        ))?;
+
+        let peak_bytes = get_peaks_from_http(backend_url, location).await?;
+
+        let peaks = Peak::read_peaks(peak_bytes.reader()).expect("Unable to read peak data");
+
+        let peaks = peaks
+            .into_iter()
+            .filter_map(|p| {
+                geotiff
+                    .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
+                    .map(|h| {
+                        PeakInstance::new(
+                            transform(h, p.longitude, p.latitude, lambda_0 as f32, phi_0 as f32),
+                            p.name,
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        Ok((geotiff, peaks))
+    }
+
+    pub fn add_terrain(&mut self, location: GeoLocation, geotiff: &GeoTiff) {
+        self.render_environment
+            .add_terrain_data(&self.device, &self.queue, location, &geotiff);
     }
 }

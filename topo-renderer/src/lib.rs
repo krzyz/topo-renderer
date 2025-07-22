@@ -5,7 +5,6 @@ pub mod render;
 
 use render::state::{State, StateEvent};
 use std::sync::Arc;
-use tokio::runtime::Runtime;
 use wasm_bindgen::prelude::*;
 use winit::{
     application::ApplicationHandler,
@@ -74,25 +73,26 @@ impl ApplicationHandler<UserEvent> for Application {
 
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
+        let event_loop_proxy = self.event_loop_proxy.clone();
+        let settings = self.settings.clone();
+
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let rt = Runtime::new().unwrap();
             env_logger::init();
-            self.state = Some(rt.block_on(State::new(
-                window,
-                self.event_loop_proxy.clone(),
-                self.settings.clone(),
-            )));
+
+            let state = futures::executor::block_on(async move {
+                State::new(window, event_loop_proxy, settings).await
+            });
+            self.state = Some(state);
         }
         #[cfg(target_arch = "wasm32")]
         {
             let (sender, receiver) = futures::channel::oneshot::channel();
-            let event_loop_proxy = self.event_loop_proxy.clone();
-            let settings = self.settings.clone();
-            wasm_bindgen_futures::spawn_local(async move {
+            let future = async move {
                 let state = State::new(window, event_loop_proxy, settings).await;
                 sender.send(state).unwrap();
-            });
+            };
+            wasm_bindgen_futures::spawn_local(future);
             self.receiver = Some(receiver);
         }
     }
@@ -104,17 +104,28 @@ impl ApplicationHandler<UserEvent> for Application {
         event: WindowEvent,
     ) {
         if self.state.is_none() {
+            log::info!("Checking if state ready");
             if let Some(ref mut receiver) = self.receiver {
-                if let Ok(Some(mut state)) = receiver.try_recv() {
-                    state.window().request_redraw();
-                    if let Some(physical_size) = self.resized.take() {
-                        self.surface_configured = true;
-                        state.resize(physical_size);
-                        state.force_render = true;
-                        // On macos the window needs to be redrawn manually after resizing
+                log::info!("Getting the receiver");
+                match receiver.try_recv() {
+                    Ok(Some(mut state)) => {
+                        log::info!("Received new state");
                         state.window().request_redraw();
+                        if let Some(physical_size) = self.resized.take() {
+                            self.surface_configured = true;
+                            state.resize(physical_size);
+                            state.force_render = true;
+                            // On macos the window needs to be redrawn manually after resizing
+                            state.window().request_redraw();
+                        }
+                        self.state = Some(state);
                     }
-                    self.state = Some(state);
+                    Ok(None) => {
+                        log::info!("None state received?");
+                    }
+                    Err(err) => {
+                        log::info!("canceled error: {err}");
+                    }
                 }
             }
         }

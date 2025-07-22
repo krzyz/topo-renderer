@@ -1,7 +1,7 @@
 use crate::render::data::PostprocessingUniforms;
 
 use super::{
-    data::{PeakInstanceRaw, Uniforms, Vertex},
+    data::{Uniforms, Vertex},
     texture::Texture,
 };
 
@@ -173,7 +173,7 @@ impl Pipeline {
             vertex: wgpu::VertexState {
                 module: &render_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc(), PeakInstanceRaw::desc()],
+                buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             primitive: wgpu::PrimitiveState {

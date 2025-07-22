@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use geotiff::GeoTiff;
+use topo_common::GeoLocation;
 use wgpu::RenderPass;
 
 use crate::common::data::{Size, pad_256};
@@ -9,21 +12,15 @@ use super::{
     data::{PostprocessingUniforms, Uniforms},
     pipeline::Pipeline,
     render_buffer::RenderBuffer,
-    state::PeakInstance,
     texture::Texture,
 };
-
-pub enum GeoTiffUpdate<'a> {
-    Old(&'a GeoTiff),
-    New(&'a GeoTiff),
-}
 
 pub struct RenderEnvironment {
     first_pass_pipeline: Pipeline,
     postprocessing_pipeline: Pipeline,
     texture_view: BoundTextureView,
     postprocessing_depth_texture_view: BoundTextureView,
-    render_buffer: RenderBuffer,
+    render_buffers: BTreeMap<GeoLocation, RenderBuffer>,
     depth_read_buffer: Buffer,
     format: wgpu::TextureFormat,
     target_size: Size<u32>,
@@ -57,7 +54,7 @@ impl RenderEnvironment {
             postprocessing_pipeline,
             texture_view,
             postprocessing_depth_texture_view,
-            render_buffer: RenderBuffer::new(device),
+            render_buffers: BTreeMap::new(),
             depth_read_buffer,
             format,
             target_size,
@@ -140,10 +137,7 @@ impl RenderEnvironment {
                 load: wgpu::LoadOp::Clear(0.0),
                 store: wgpu::StoreOp::Store,
             }),
-            stencil_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(0),
-                store: wgpu::StoreOp::Store,
-            }),
+            stencil_ops: None,
         })
     }
 
@@ -152,8 +146,6 @@ impl RenderEnvironment {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         target_size: Size<u32>,
-        geotiff_update: GeoTiffUpdate,
-        _peaks: &Vec<PeakInstance>,
         uniforms: &Uniforms,
         postprocessing_uniforms: &PostprocessingUniforms,
     ) {
@@ -169,25 +161,20 @@ impl RenderEnvironment {
             0,
             bytemuck::bytes_of(postprocessing_uniforms),
         );
+    }
 
-        let geotiff = match geotiff_update {
-            GeoTiffUpdate::New(geotiff) => Some(geotiff),
-            GeoTiffUpdate::Old(geotiff) if self.render_buffer.is_terrain_empty() => Some(geotiff),
-            _ => None,
-        };
-
-        if let Some(geotiff) = geotiff {
-            self.render_buffer.update_terrain(device, queue, geotiff);
-        }
-
-        /*
-        let visible_peaks = &peaks
-            .iter()
-            .filter_map(|p| p.visible.then_some(p.position))
-            .collect();
-
-        */
-        self.render_buffer.update_peaks(device, queue, &vec![]);
+    pub fn add_terrain_data(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        location: GeoLocation,
+        geotiff: &GeoTiff,
+    ) {
+        self.render_buffers.insert(location, {
+            let mut buffer = RenderBuffer::new(device);
+            buffer.add_terrain(device, queue, geotiff);
+            buffer
+        });
     }
 
     pub fn render<'a>(
@@ -232,25 +219,15 @@ impl RenderEnvironment {
                     &[],
                 );
 
-                render_pass.set_vertex_buffer(0, self.render_buffer.get_vertices().raw.slice(..));
-                render_pass
-                    .set_vertex_buffer(1, self.render_buffer.get_peak_instances().raw.slice(..));
-                render_pass.set_index_buffer(
-                    self.render_buffer.get_indices().raw.slice(..),
-                    wgpu::IndexFormat::Uint32,
-                );
+                self.render_buffers.iter().for_each(|(_, render_buffer)| {
+                    render_pass.set_vertex_buffer(0, render_buffer.get_vertices().raw.slice(..));
+                    render_pass.set_index_buffer(
+                        render_buffer.get_indices().raw.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
 
-                render_pass.draw_indexed(
-                    self.render_buffer.get_terrain_range(),
-                    self.render_buffer.get_vertex_offset(),
-                    0..1,
-                );
-
-                render_pass.draw_indexed(
-                    0..self.render_buffer.get_index_offset(),
-                    0,
-                    0..self.render_buffer.get_num_peak_instances(),
-                );
+                    render_pass.draw_indexed(render_buffer.get_terrain_range(), 0, 0..1);
+                });
             }
 
             let mut postprocessing_pass =

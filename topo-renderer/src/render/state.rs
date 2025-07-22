@@ -281,6 +281,8 @@ impl State {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
+            debug!("Updating size");
+            self.render_environment.get_depth_read_buffer_mut().unmap();
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.update_size(new_size);
@@ -318,15 +320,11 @@ impl State {
         if let Some(mes) = self.receiver.try_iter().last() {
             match mes {
                 Message::DepthBufferReady(depth_state) => {
-                    if depth_state.size == self.size.into() {
+                    let depth_buffer = self.render_environment.get_depth_read_buffer();
+                    if depth_state.size == self.size.into() && depth_buffer.mapped {
                         let peak_labels = {
                             self.depth_state = Some(depth_state);
-                            let depth_buffer = self
-                                .render_environment
-                                .get_depth_read_buffer()
-                                .raw
-                                .slice(..)
-                                .get_mapped_range();
+                            let depth_buffer_view = depth_buffer.raw.slice(..).get_mapped_range();
                             let projection = depth_state.camera.build_view_proj_matrix(
                                 depth_state.size.width as f32,
                                 depth_state.size.height as f32,
@@ -356,7 +354,7 @@ impl State {
                                             + y_pos * pad_256(depth_state.size.width * 4))
                                             as usize;
 
-                                        let depth_value = depth_buffer
+                                        let depth_value = depth_buffer_view
                                             .get(pos..pos + 4)
                                             .expect("Failed depth buffer lookup")
                                             .get_f32_le();

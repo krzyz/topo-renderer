@@ -56,25 +56,100 @@ impl RenderBuffer {
         (0)..self.get_num_indices()
     }
 
-    fn generate_indices(&self, raster_width: usize, raster_height: usize) -> Vec<u32> {
-        (0..(raster_width * raster_height))
+    fn generate_prenormals(
+        vertices: &Vec<Vertex>,
+        raster_width: usize,
+        raster_height: usize,
+    ) -> Vec<glam::Vec3> {
+        vertices
             .into_iter()
-            .flat_map(|i| {
+            .enumerate()
+            .map(|(i, vert)| {
+                let row = i / raster_height;
+                let col = i % raster_height;
+                let left = if col > 0 {
+                    vertices.get(i - 1).map(|l| l.position - vert.position)
+                } else {
+                    None
+                };
+                let right = if col < raster_height - 1 {
+                    vertices.get(i + 1).map(|r| r.position - vert.position)
+                } else {
+                    None
+                };
+                let bot = if row > 0 {
+                    vertices
+                        .get(i - raster_height)
+                        .map(|b| b.position - vert.position)
+                } else {
+                    None
+                };
+                let top = if row < raster_width - 1 {
+                    vertices
+                        .get(i + raster_height)
+                        .map(|t| t.position - vert.position)
+                } else {
+                    None
+                };
+
+                [(left, top), (top, right), (right, bot), (bot, left)]
+                    .into_iter()
+                    .map(|(v0, v1)| {
+                        if let (Some(v0), Some(v1)) = (v0, v1) {
+                            v0.cross(v1)
+                        } else {
+                            glam::Vec3::ZERO
+                        }
+                    })
+                    .fold(glam::Vec3::ZERO, |sum, el| sum + el)
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn generate_indices(
+        vertices: &Vec<Vertex>,
+        normals: &Vec<glam::Vec3>,
+        raster_width: usize,
+        raster_height: usize,
+    ) -> Vec<u32> {
+        vertices
+            .into_iter()
+            .enumerate()
+            .flat_map(|(i, _)| {
                 let row = i / raster_height;
                 let col = i % raster_height;
 
                 let mut inds = vec![];
 
-                if col < raster_height - 1 {
-                    if row < raster_width - 1 {
-                        inds.push(i + 1);
-                        inds.push(i);
-                        inds.push(i + raster_height);
-                    }
-                    if row > 0 {
-                        inds.push(i);
-                        inds.push(i + 1);
-                        inds.push(i + 1 - raster_height);
+                if col < raster_height - 1 && row < raster_width - 1 {
+                    let bl = i;
+                    let br = i + 1;
+                    let tl = i + raster_height;
+                    let tr = i + raster_height + 1;
+                    /*
+                    let bltr = (vert.position.y - vertices.get(tr).unwrap().position.y).abs();
+                    let brtl = (vertices.get(br).unwrap().position.y
+                        - vertices.get(tl).unwrap().position.y)
+                        .abs();
+                    */
+
+                    let bltr = normals.get(bl).unwrap().dot(*normals.get(tr).unwrap());
+                    let brtl = normals.get(br).unwrap().dot(*normals.get(tl).unwrap());
+
+                    if brtl > bltr {
+                        inds.push(br);
+                        inds.push(bl);
+                        inds.push(tl);
+                        inds.push(tl);
+                        inds.push(tr);
+                        inds.push(br);
+                    } else {
+                        inds.push(br);
+                        inds.push(bl);
+                        inds.push(tr);
+                        inds.push(tl);
+                        inds.push(tr);
+                        inds.push(bl);
                     }
                 }
 
@@ -109,7 +184,8 @@ impl RenderBuffer {
             }).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-        let indices = self.generate_indices(raster_width, raster_height);
+        let normals = Self::generate_prenormals(&vertices, raster_width, raster_height);
+        let indices = Self::generate_indices(&vertices, &normals, raster_width, raster_height);
 
         // Calculate normals using indices
 

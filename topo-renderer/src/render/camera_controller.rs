@@ -23,7 +23,11 @@ pub struct CameraController {
     is_right_pressed: bool,
     is_e_pressed: bool,
     is_q_pressed: bool,
-    mouse_total_delta: (f32, f32),
+    is_ctrl_pressed: bool,
+    is_space_pressed: bool,
+    is_shift_pressed: bool,
+    mouse_view_delta: (f32, f32),
+    mouse_ctrl_delta: (f32, f32),
     events_to_process: VecDeque<CameraControllerEvent>,
 }
 
@@ -37,7 +41,11 @@ impl CameraController {
             is_right_pressed: false,
             is_e_pressed: false,
             is_q_pressed: false,
-            mouse_total_delta: (0.0, 0.0),
+            is_ctrl_pressed: false,
+            is_space_pressed: false,
+            is_shift_pressed: false,
+            mouse_view_delta: (0.0, 0.0),
+            mouse_ctrl_delta: (0.0, 0.0),
             events_to_process: VecDeque::default(),
         }
     }
@@ -80,6 +88,18 @@ impl CameraController {
                         self.is_e_pressed = is_pressed;
                         true
                     }
+                    KeyCode::Space => {
+                        self.is_space_pressed = is_pressed;
+                        true
+                    }
+                    KeyCode::ShiftLeft => {
+                        self.is_shift_pressed = is_pressed;
+                        true
+                    }
+                    KeyCode::ControlLeft => {
+                        self.is_ctrl_pressed = is_pressed;
+                        true
+                    }
                     KeyCode::KeyF if is_pressed => {
                         self.events_to_process
                             .push_front(CameraControllerEvent::ToggleViewMode);
@@ -95,8 +115,13 @@ impl CameraController {
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
         match event {
             DeviceEvent::MouseMotion { delta } => {
-                self.mouse_total_delta.0 += delta.0 as f32;
-                self.mouse_total_delta.1 += delta.1 as f32;
+                if self.is_ctrl_pressed {
+                    self.mouse_ctrl_delta.0 += delta.0 as f32;
+                    self.mouse_ctrl_delta.1 += delta.1 as f32;
+                } else {
+                    self.mouse_view_delta.0 += delta.0 as f32;
+                    self.mouse_view_delta.1 += delta.1 as f32;
+                }
             }
             _ => {}
         }
@@ -104,39 +129,53 @@ impl CameraController {
 
     pub fn update_camera(&mut self, camera: &mut Camera, time_delta: Duration) -> bool {
         let mut changed = false;
-        let increment = self.speed * 0.0001 * time_delta.as_micros() as f32;
+        let increment = self.speed * 0.1 * time_delta.as_micros() as f32;
         if self.is_q_pressed {
-            camera.set_fovy(camera.fov_y() - increment);
+            camera.set_fovy(camera.fov_y() - 0.001 * increment);
             changed = true;
         }
         if self.is_e_pressed {
-            camera.set_fovy(camera.fov_y() + increment);
+            camera.set_fovy(camera.fov_y() + 0.001 * increment);
             changed = true;
         }
         if self.is_up_pressed {
-            camera.rotate_vertical(-increment);
+            camera.set_eye(camera.eye + camera.direction() * increment);
             changed = true;
         }
         if self.is_down_pressed {
-            camera.rotate_vertical(increment);
+            camera.set_eye(camera.eye - camera.direction() * increment);
             changed = true;
         }
         if self.is_right_pressed {
-            camera.rotate(-increment);
+            camera.set_eye(camera.eye + camera.direction_right() * increment);
             changed = true;
         }
         if self.is_left_pressed {
-            camera.rotate(increment);
+            camera.set_eye(camera.eye - camera.direction_right() * increment);
             changed = true;
         }
-        camera.sun_angle.theta += self.mouse_total_delta.0;
-        camera.sun_angle.phi += self.mouse_total_delta.1;
-
-        if self.mouse_total_delta != (0.0, 0.0) {
+        if self.is_space_pressed {
+            camera.set_eye(camera.eye - camera.up() * increment);
             changed = true;
         }
+        if self.is_shift_pressed {
+            camera.set_eye(camera.eye + camera.up() * increment);
+            changed = true;
+        }
+        camera.sun_angle.theta += self.mouse_ctrl_delta.0;
+        camera.sun_angle.phi += self.mouse_ctrl_delta.1;
 
-        self.mouse_total_delta = (0.0, 0.0);
+        if self.mouse_view_delta != (0.0, 0.0) {
+            camera.rotate_yaw(-self.mouse_view_delta.0 * 0.01);
+            camera.rotate_pitch(self.mouse_view_delta.1 * 0.01);
+            changed = true;
+            self.mouse_view_delta = (0.0, 0.0);
+        }
+
+        if self.mouse_ctrl_delta != (0.0, 0.0) {
+            changed = true;
+            self.mouse_ctrl_delta = (0.0, 0.0);
+        }
 
         self.events_to_process
             .drain(..)

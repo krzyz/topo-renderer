@@ -1,5 +1,3 @@
-use glam::vec3;
-
 use crate::common::data::Size;
 
 use super::camera::Camera;
@@ -38,14 +36,12 @@ pub struct Uniforms {
     camera_proj: glam::Mat4,
     normal_proj: glam::Mat4,
     camera_pos: glam::Vec4,
-    pub lambda_phi_h: glam::Vec3,
-    pub view_mode: i32,
     pub sun_direction: glam::Vec3,
-    padding: i32,
+    pub view_mode: i32,
 }
 
 impl Uniforms {
-    pub fn new(camera: &Camera, bounds: Size<f32>, lambda_0: f32, phi_0: f32, h: f32) -> Self {
+    pub fn new(camera: &Camera, bounds: Size<f32>) -> Self {
         let camera_proj = camera.build_view_proj_matrix(bounds.width, bounds.height);
         let normal_proj = camera.build_view_normal_matrix();
         let view_mode = camera.view_mode as i32;
@@ -54,10 +50,8 @@ impl Uniforms {
             camera_proj,
             normal_proj,
             camera_pos: camera.position(),
-            lambda_phi_h: vec3(lambda_0, phi_0, h),
-            view_mode,
             sun_direction: camera.sun_angle.to_vec3(),
-            padding: 0,
+            view_mode,
         };
 
         new_uniforms
@@ -71,10 +65,8 @@ impl Uniforms {
             camera_proj,
             normal_proj,
             camera_pos: camera.position(),
-            lambda_phi_h: self.lambda_phi_h,
-            view_mode: camera.view_mode as i32,
             sun_direction: camera.sun_angle.to_vec3(),
-            padding: 0,
+            view_mode: camera.view_mode as i32,
         }
     }
 }

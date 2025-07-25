@@ -1,5 +1,8 @@
-use glam::{vec3, Vec3};
+use glam::{Vec3, vec3};
 use std::f32::consts::PI;
+use topo_common::GeoCoord;
+
+use super::geometry::transform;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum ViewMode {
@@ -42,10 +45,9 @@ impl LightAngle {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Camera {
-    eye: glam::Vec3,
-    direction: f32,
-    direction_vertical: f32,
-    up: glam::Vec3,
+    pub eye: glam::Vec3,
+    pub pitch: f32,
+    pub yaw: f32,
     fov_y: f32,
     near: f32,
     far: f32,
@@ -57,13 +59,13 @@ impl Default for Camera {
     fn default() -> Self {
         Self {
             eye: Self::DEFAULT_POSITION,
-            direction: 0.0,
-            direction_vertical: 0.0,
-            up: glam::Vec3::Y,
+            pitch: 0.0,
+            yaw: 0.0,
             fov_y: 45.0,
             near: 10.0,
             far: 1000000.0,
             view_mode: ViewMode::default(),
+            // TODO: Move elsewhere as it's not a part of the camera
             sun_angle: LightAngle {
                 theta: 45.0,
                 phi: 0.0,
@@ -73,24 +75,45 @@ impl Default for Camera {
 }
 
 impl Camera {
-    pub const DEFAULT_POSITION: Vec3 = vec3(0.0, 10.0, 0.0);
+    pub const DEFAULT_POSITION: Vec3 = vec3(0.0, 0.0, 0.0);
+
+    pub fn reset(&mut self, coord: GeoCoord, height: f32) {
+        log::debug!(
+            "Updated camera position from height: {height}, latitude: {}, longitude: {}",
+            coord.latitude,
+            coord.longitude,
+        );
+        self.eye = transform(height, coord.latitude, coord.longitude);
+
+        log::debug!("Updated camera position to {:#?}", self.eye);
+    }
+
+    pub fn up(&self) -> Vec3 {
+        self.eye.normalize()
+    }
+
+    pub fn direction(&self) -> Vec3 {
+        let glob_rotation = glam::Quat::from_rotation_arc(Vec3::new(0.0, -1.0, 0.0), self.up());
+        let x = self.yaw.cos() * self.pitch.cos();
+        let y = self.pitch.sin();
+        let z = self.yaw.sin() * self.pitch.cos();
+        let direction = glob_rotation * Vec3::new(x, y, z);
+        direction
+    }
+
+    pub fn direction_right(&self) -> Vec3 {
+        glam::Quat::from_axis_angle(self.up(), -0.5 * PI) * self.direction()
+    }
+
+    pub fn direction_down(&self) -> Vec3 {
+        -self.up()
+    }
 
     pub fn get_view(&self) -> glam::Mat4 {
-        glam::Mat4::look_to_rh(
-            self.eye,
-            glam::Quat::from_euler(
-                glam::EulerRot::YXZ,
-                self.direction,
-                self.direction_vertical,
-                0.0,
-            ) * glam::Vec3::Z,
-            self.up,
-        )
+        glam::Mat4::look_to_rh(self.eye, self.direction(), self.up())
     }
 
     pub fn build_view_proj_matrix(&self, width: f32, height: f32) -> glam::Mat4 {
-        //TODO looks distorted without padding; base on surface texture size instead?
-        //let aspect_ratio = bounds.width / (bounds.height + 150.0);
         let aspect_ratio = width / height;
 
         let proj = glam::Mat4::perspective_rh(self.fov_y, aspect_ratio, self.near, self.far);
@@ -114,23 +137,23 @@ impl Camera {
         self.eye = eye;
     }
 
-    pub fn set_direction(&mut self, direction: f32) {
-        self.direction = direction;
+    pub fn set_yaw(&mut self, yaw: f32) {
+        self.yaw = yaw;
     }
 
-    pub fn set_direction_vertical(&mut self, direction: f32) {
-        self.direction_vertical = direction;
+    pub fn set_pitch(&mut self, pitch: f32) {
+        self.pitch = pitch;
     }
 
     pub fn set_fovy(&mut self, fov: f32) {
         self.fov_y = fov;
     }
 
-    pub fn rotate(&mut self, clockwise_rotation: f32) {
-        self.set_direction(self.direction + clockwise_rotation);
+    pub fn rotate_yaw(&mut self, clockwise_rotation: f32) {
+        self.set_yaw(self.yaw + clockwise_rotation);
     }
 
-    pub fn rotate_vertical(&mut self, clockwise_rotation: f32) {
-        self.set_direction_vertical(self.direction_vertical + clockwise_rotation);
+    pub fn rotate_pitch(&mut self, clockwise_rotation: f32) {
+        self.set_pitch(self.pitch + clockwise_rotation);
     }
 }

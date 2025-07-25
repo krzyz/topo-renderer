@@ -90,18 +90,22 @@ impl LineRenderer {
         self.uniforms.res_height = height as f32;
     }
 
+    pub fn clear(&mut self) {
+        self.geometry.clear();
+    }
+
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         laid_out_labels: Vec<LabelLayout>,
     ) {
-        self.geometry.clear();
-
         let lines_path = {
             let mut builder = Path::builder();
             laid_out_labels.iter().for_each(
                 |&LabelLayout {
+                     location: _,
+                     id: _,
                      label_x,
                      label_y,
                      label_width: _,
@@ -122,6 +126,8 @@ impl LineRenderer {
 
         laid_out_labels.iter().for_each(
             |&LabelLayout {
+                 location: _,
+                 id: _,
                  label_x,
                  label_y,
                  label_width,

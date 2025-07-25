@@ -7,6 +7,7 @@ use crate::{ApplicationSettings, UserEvent};
 use super::camera::Camera;
 use super::camera_controller::CameraController;
 use super::data::{PostprocessingUniforms, Uniforms};
+use super::geometry::R0;
 use super::lines::LineRenderer;
 use super::render_environment::RenderEnvironment;
 use super::text::{LabelId, TextState};
@@ -17,13 +18,12 @@ use glam::Vec3;
 use itertools::Itertools;
 use log::debug;
 use std::collections::BTreeMap;
-use std::f32::consts::PI;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use topo_common::{GeoLocation, LatitudeDirection, LongitudeDirection};
+use topo_common::{GeoCoord, GeoLocation};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 use wgpu::{TexelCopyBufferInfo, TexelCopyBufferLayout};
@@ -110,8 +110,7 @@ pub struct State {
     receiver: Receiver<Message>,
     depth_state: Option<DepthState>,
     settings: ApplicationSettings,
-    lambda_0: f32,
-    phi_0: f32,
+    coord_0: Option<GeoCoord>,
 }
 
 impl std::fmt::Debug for State {
@@ -177,29 +176,12 @@ impl State {
         };
 
         let mut camera = Camera::default();
-        camera.set_eye(Vec3::new(0.0, 1000.0, 0.0));
-        camera.set_direction(0.75 * PI);
+        camera.set_eye(Vec3::new(0.0, 0.0, 0.0));
         let camera_controller = CameraController::new(0.01);
 
         let pixelize_n = 100.0;
-        let lambda_0: f32 = 20.13715; // longitude
-        let phi_0: f32 = 49.36991; // latitude
-
-        let location = GeoLocation {
-            latitude: topo_common::Latitude {
-                degree: phi_0.floor() as i32,
-                direction: LatitudeDirection::N,
-            },
-            longitude: topo_common::Longitude {
-                degree: lambda_0.floor() as i32,
-                direction: LongitudeDirection::E,
-            },
-        };
-
-        sender.send(Message::TerrainQueued(location)).unwrap();
-
         let bounds = (size.width as f32, size.height as f32).into();
-        let uniforms = Uniforms::new(&camera, bounds, lambda_0, phi_0, 0.0);
+        let uniforms = Uniforms::new(&camera, bounds);
         let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
 
         let render_environment =
@@ -240,8 +222,7 @@ impl State {
             receiver,
             depth_state: None,
             settings,
-            lambda_0,
-            phi_0,
+            coord_0: None,
         }
     }
 
@@ -308,7 +289,9 @@ impl State {
 
         let bounds = (self.size.width as f32, self.size.height as f32).into();
 
-        if let Some(mes) = self.receiver.try_iter().last() {
+        let messages = self.receiver.try_iter().collect::<Vec<_>>();
+
+        for mes in messages {
             match mes {
                 Message::DepthBufferReady(depth_state) => {
                     let depth_buffer = self.render_environment.get_depth_read_buffer();
@@ -320,87 +303,81 @@ impl State {
                         );
                         self.depth_state = Some(depth_state);
 
-                        self.peaks.iter_mut().for_each(|(location, peaks)| {
-                            let peak_labels = peaks
-                                .iter_mut()
-                                .enumerate()
-                                .map(|(i, peak)| {
-                                    let projected_point = projection.project_point3(peak.position);
-                                    if projected_point.x > -1.0
-                                        && projected_point.x < 1.0
-                                        && projected_point.y > -1.0
-                                        && projected_point.y < 1.0
-                                    {
-                                        let (x_pos, y_pos) = (
-                                            (0.5 * (projected_point.x + 1.0)
-                                                * self.size.width as f32)
-                                                as u32,
-                                            (-0.5
-                                                * (projected_point.y - 1.0)
-                                                * self.size.height as f32)
-                                                as u32,
-                                        );
+                        self.line_renderer.clear();
 
-                                        let pos = (x_pos * 4
-                                            + y_pos * pad_256(depth_state.size.width * 4))
-                                            as usize;
+                        let visible_labels = self
+                            .peaks
+                            .iter_mut()
+                            .map(|(location, peaks)| {
+                                let peak_labels = peaks
+                                    .iter_mut()
+                                    .enumerate()
+                                    .map(|(i, peak)| {
+                                        let projected_point =
+                                            projection.project_point3(peak.position);
+                                        if projected_point.x > -1.0
+                                            && projected_point.x < 1.0
+                                            && projected_point.y > -1.0
+                                            && projected_point.y < 1.0
+                                        {
+                                            let (x_pos, y_pos) = (
+                                                (0.5 * (projected_point.x + 1.0)
+                                                    * self.size.width as f32)
+                                                    as u32,
+                                                (-0.5
+                                                    * (projected_point.y - 1.0)
+                                                    * self.size.height as f32)
+                                                    as u32,
+                                            );
 
-                                        let depth_value = depth_buffer_view
-                                            .get(pos..pos + 4)
-                                            .expect("Failed depth buffer lookup")
-                                            .get_f32_le();
+                                            let pos = (x_pos * 4
+                                                + y_pos * pad_256(depth_state.size.width * 4))
+                                                as usize;
 
-                                        /*
-                                        debug!(
-                                            "Projected point {}: {projected_point}, pos: ({}, {})",
-                                            peak.name, x_pos, y_pos
-                                        );
-                                        debug!("depth value: {:.16}", depth_value);
-                                        */
+                                            let depth_value = depth_buffer_view
+                                                .get(pos..pos + 4)
+                                                .expect("Failed depth buffer lookup")
+                                                .get_f32_le();
 
-                                        if projected_point.z < 1.000001 * depth_value {
-                                            peak.visible = true;
-                                            //debug!("visible");
-                                            (i, peak, Some((x_pos, y_pos)))
+                                            if projected_point.z < 1.000001 * depth_value {
+                                                peak.visible = true;
+                                                //debug!("visible");
+                                                (i, peak, Some((x_pos, y_pos)))
+                                            } else {
+                                                (i, peak, None)
+                                            }
                                         } else {
                                             (i, peak, None)
                                         }
-                                    } else {
-                                        (i, peak, None)
-                                    }
-                                })
-                                .update(|(_, peak, vis_pos)| match vis_pos {
-                                    Some(_) => peak.visible = true,
-                                    None => peak.visible = false,
-                                })
-                                .filter_map(|(i, _, vis_pos)| {
-                                    vis_pos.map(|pos| (LabelId(i as u32), pos))
-                                })
-                                .collect::<Vec<_>>();
+                                    })
+                                    .update(|(_, peak, vis_pos)| match vis_pos {
+                                        Some(_) => peak.visible = true,
+                                        None => peak.visible = false,
+                                    })
+                                    .filter_map(|(i, _, vis_pos)| {
+                                        vis_pos.map(|pos| (LabelId(i as u32), pos))
+                                    })
+                                    .collect::<Vec<_>>();
 
-                            let laid_out_labels = self.text_state.prepare(
-                                &self.device,
-                                &self.queue,
-                                location,
-                                peak_labels,
-                            );
-                            self.line_renderer
-                                .prepare(&self.device, &self.queue, laid_out_labels);
-                            changed = true;
-                        });
+                                (*location, peak_labels)
+                            })
+                            .collect::<BTreeMap<_, _>>();
+
+                        let laid_out_labels =
+                            self.text_state
+                                .prepare(&self.device, &self.queue, visible_labels);
+                        self.line_renderer
+                            .prepare(&self.device, &self.queue, laid_out_labels);
+                        changed = true;
                     }
                     self.render_environment.get_depth_read_buffer_mut().unmap();
                 }
                 Message::TerrainQueued(location) => {
                     let backend_url = self.settings.backend_url.clone();
                     let sender = self.sender.clone();
-                    let lambda_0 = self.lambda_0 as f32;
-                    let phi_0 = self.phi_0 as f32;
                     let future = async move {
                         let (gtiff, peaks) =
-                            Self::fetch_dem_data(&backend_url, location, lambda_0, phi_0)
-                                .await
-                                .unwrap();
+                            Self::fetch_dem_data(&backend_url, location).await.unwrap();
 
                         sender
                             .send(Message::TerrainReceived((location, gtiff, peaks)))
@@ -413,18 +390,24 @@ impl State {
                 }
 
                 Message::TerrainReceived((location, gtiff, peaks)) => {
-                    let h = gtiff
-                        .get_value_at(&(self.lambda_0 as f64, self.phi_0 as f64).into(), 0)
-                        .unwrap();
-
-                    self.uniforms =
-                        Uniforms::new(&self.camera, bounds, self.lambda_0, self.phi_0, h);
+                    self.uniforms = Uniforms::new(&self.camera, bounds);
 
                     self.text_state.prepare_peak_labels(location, &peaks);
 
                     self.peaks.insert(location, peaks);
 
                     self.add_terrain(location, &gtiff);
+
+                    if let Some(coord_0) = self.coord_0 {
+                        if GeoLocation::from(coord_0) == location {
+                            let height: f32 = gtiff
+                                .get_value_at(&(<(f64, f64)>::from(coord_0)).into(), 0)
+                                .unwrap();
+
+                            self.camera.reset(coord_0, height + 10.0);
+                        }
+                    }
+
                     changed = true;
                 }
             }
@@ -523,14 +506,14 @@ impl State {
                     .send_event(UserEvent::StateEvent(StateEvent::FrameFinished(
                         new_depth_state,
                     )))
-                    .unwrap();
+                    .ok();
             });
             #[cfg(target_arch = "wasm32")]
             event_loop_proxy
                 .send_event(UserEvent::StateEvent(StateEvent::FrameFinished(
                     new_depth_state,
                 )))
-                .unwrap();
+                .ok();
         }
 
         Ok(())
@@ -557,8 +540,6 @@ impl State {
     async fn fetch_dem_data(
         backend_url: &str,
         location: GeoLocation,
-        lambda_0: f32,
-        phi_0: f32,
     ) -> Result<(GeoTiff, Vec<PeakInstance>)> {
         let geotiff = GeoTiff::read(Cursor::new(
             get_tiff_from_http(backend_url, location).await?.as_ref(),
@@ -570,23 +551,67 @@ impl State {
 
         let peaks = peaks
             .into_iter()
+            .sorted_by(|a, b| {
+                PartialOrd::partial_cmp(&b.elevation, &a.elevation)
+                    .unwrap_or(std::cmp::Ordering::Less)
+            })
             .filter_map(|p| {
                 geotiff
                     .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
-                    .map(|h| {
-                        PeakInstance::new(
-                            transform(h, p.longitude, p.latitude, lambda_0 as f32, phi_0 as f32),
-                            p.name,
-                        )
-                    })
+                    .map(|h| PeakInstance::new(transform(h, p.latitude, p.longitude), p.name))
             })
             .collect::<Vec<_>>();
 
         Ok((geotiff, peaks))
     }
 
-    pub fn add_terrain(&mut self, location: GeoLocation, geotiff: &GeoTiff) {
+    pub fn set_coord_0(&mut self, location: GeoCoord) {
+        self.coord_0 = Some(location);
+        Self::get_locations_range(location)
+            .into_iter()
+            .for_each(|to_fetch| {
+                self.sender.send(Message::TerrainQueued(to_fetch)).unwrap();
+            });
+    }
+
+    fn get_locations_range(location: GeoCoord) -> Vec<GeoLocation> {
+        // TODO: handle projection edges (90NS/180EW deg)
+        let range_dist = 100000.; // 100 km
+        let lat_cos = (location.latitude.to_radians()).cos();
+        let arc_factor = 0.5 * range_dist / R0;
+        let arc_factor_sin = arc_factor.sin();
+        let afs_sq = arc_factor_sin * arc_factor_sin;
+        let dlon = (1.0 - afs_sq / lat_cos / lat_cos).acos().to_degrees();
+        let dlat = (1.0 - afs_sq).acos().to_degrees();
+        let lat_start = (location.latitude - dlat).floor() as i32;
+        let lat_end = (location.latitude + dlat).floor() as i32;
+        let lon_start = (location.longitude - dlon).floor() as i32;
+        let lon_end = (location.longitude + dlon).floor() as i32;
+
+        (lat_start..=lat_end)
+            .cartesian_product(lon_start..=lon_end)
+            .map(|(lat, lon)| GeoLocation::from_coord(lat, lon).into())
+            .collect()
+    }
+
+    fn add_terrain(&mut self, location: GeoLocation, geotiff: &GeoTiff) {
+        log::debug!("Adding terrain");
         self.render_environment
             .add_terrain_data(&self.device, &self.queue, location, &geotiff);
+        log::debug!("Added terrain");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_range() {
+        let locations = State::get_locations_range(GeoCoord::new(52.1, 20.1));
+
+        let expected = vec![];
+
+        assert_eq!(locations, expected);
     }
 }

@@ -4,9 +4,6 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{buffer::Buffer, data::Vertex, geometry::transform};
 
-const LAMBDA_0: f32 = 20.13715; // longitude
-const PHI_0: f32 = 49.36991; // latitude
-
 pub struct RenderBuffer {
     vertices: Buffer,
     indices: Buffer,
@@ -56,85 +53,33 @@ impl RenderBuffer {
         (0)..self.get_num_indices()
     }
 
-    fn generate_prenormals(
-        vertices: &Vec<Vertex>,
-        raster_width: usize,
-        raster_height: usize,
-    ) -> Vec<glam::Vec3> {
-        vertices
-            .into_iter()
-            .enumerate()
-            .map(|(i, vert)| {
-                let row = i / raster_height;
-                let col = i % raster_height;
-                let left = if col > 0 {
-                    vertices.get(i - 1).map(|l| l.position - vert.position)
-                } else {
-                    None
-                };
-                let right = if col < raster_height - 1 {
-                    vertices.get(i + 1).map(|r| r.position - vert.position)
-                } else {
-                    None
-                };
-                let bot = if row > 0 {
-                    vertices
-                        .get(i - raster_height)
-                        .map(|b| b.position - vert.position)
-                } else {
-                    None
-                };
-                let top = if row < raster_width - 1 {
-                    vertices
-                        .get(i + raster_height)
-                        .map(|t| t.position - vert.position)
-                } else {
-                    None
-                };
-
-                [(left, top), (top, right), (right, bot), (bot, left)]
-                    .into_iter()
-                    .map(|(v0, v1)| {
-                        if let (Some(v0), Some(v1)) = (v0, v1) {
-                            v0.cross(v1)
-                        } else {
-                            glam::Vec3::ZERO
-                        }
-                    })
-                    .fold(glam::Vec3::ZERO, |sum, el| sum + el)
-            })
-            .collect::<Vec<_>>()
-    }
-
     fn generate_indices(
         vertices: &Vec<Vertex>,
-        normals: &Vec<glam::Vec3>,
         raster_width: usize,
         raster_height: usize,
     ) -> Vec<u32> {
         vertices
             .into_iter()
             .enumerate()
-            .flat_map(|(i, _)| {
+            .flat_map(|(i, vert)| {
                 let row = i / raster_height;
                 let col = i % raster_height;
 
                 let mut inds = vec![];
 
                 if col < raster_height - 1 && row < raster_width - 1 {
+                    // Check which pair of opposing corners has the least height difference
+                    // for some hopefully nicer (but not ideal) triangles
                     let bl = i;
                     let br = i + 1;
                     let tl = i + raster_height;
                     let tr = i + raster_height + 1;
-                    /*
-                    let bltr = (vert.position.y - vertices.get(tr).unwrap().position.y).abs();
-                    let brtl = (vertices.get(br).unwrap().position.y
-                        - vertices.get(tl).unwrap().position.y)
-                        .abs();
-                    */
-
-                    let bltr = normals.get(bl).unwrap().dot(*normals.get(tr).unwrap());
-                    let brtl = normals.get(br).unwrap().dot(*normals.get(tl).unwrap());
+                    let bltr = (vert.position.length()
+                        - vertices.get(tr).unwrap().position.length())
+                    .abs();
+                    let brtl = (vertices.get(br).unwrap().position.length()
+                        - vertices.get(tl).unwrap().position.length())
+                    .abs();
 
                     if brtl > bltr {
                         inds.push(br);
@@ -144,12 +89,12 @@ impl RenderBuffer {
                         inds.push(tr);
                         inds.push(br);
                     } else {
+                        inds.push(tr);
                         inds.push(br);
                         inds.push(bl);
-                        inds.push(tr);
+                        inds.push(bl);
                         inds.push(tl);
                         inds.push(tr);
-                        inds.push(bl);
                     }
                 }
 
@@ -179,17 +124,15 @@ impl RenderBuffer {
                 let height = geotiff.get_value_at(&coord, 0).expect(&format!(
                     "Unable to find value for {coord:#?} (row {row}, col {col}"
                 ));
-                let position = transform(height, coord.x as f32, coord.y as f32, LAMBDA_0, PHI_0);
+                let position = transform(height, coord.y as f32, coord.x as f32);
                 Vertex::new(position, glam::Vec3::ZERO)
             }).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-        let normals = Self::generate_prenormals(&vertices, raster_width, raster_height);
-        let indices = Self::generate_indices(&vertices, &normals, raster_width, raster_height);
-
-        // Calculate normals using indices
+        let indices = Self::generate_indices(&vertices, raster_width, raster_height);
 
         for chunk in indices.as_slice().chunks_exact(3) {
+            //let [i0, _, i1, _, i2, _]: [u32; 6] = chunk.try_into().unwrap();
             let [i0, i1, i2]: [u32; 3] = chunk.try_into().unwrap();
             let v0 = vertices.get(i0 as usize).unwrap().position;
             let v1 = vertices.get(i1 as usize).unwrap().position;
@@ -200,19 +143,24 @@ impl RenderBuffer {
 
             let contribution = side1.cross(side2);
 
-            for &i in chunk {
+            for (&i, factor) in chunk.iter().zip([0.5, 1.0, 0.5]) {
                 if let Some(vertex) = vertices.get_mut(i as usize) {
-                    vertex.normal -= contribution;
+                    vertex.normal -= factor * contribution;
                 }
             }
         }
 
         vertices.iter().take(5).for_each(|v| {
-            debug!("Terrain vertex: {:#?}", v.position);
+            debug!("Terrain vertex position: {:#?}", v.position);
+            debug!("Terrain vertex normal: {:#?}", v.normal);
         });
 
-        let new_vertices_size =
-            (geotiff.raster_width * geotiff.raster_height * std::mem::size_of::<Vertex>()) as u64;
+        vertices.iter().rev().take(5).for_each(|v| {
+            debug!("Terrain vertex position: {:#?}", v.position);
+            debug!("Terrain vertex normal: {:#?}", v.normal);
+        });
+
+        let new_vertices_size = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
         if new_vertices_size != self.vertices.raw.size() {
             self.vertices.resize(device, new_vertices_size);
         }

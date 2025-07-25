@@ -3,14 +3,17 @@ use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Shaping, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
 };
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound::{Included, Unbounded};
+use std::rc::Rc;
 use topo_common::GeoLocation;
 use wgpu::MultisampleState;
 
 pub const LINE_HEIGHT: f32 = 16.0;
 pub const LINE_PADDING: f32 = 4.0;
 pub const LABEL_PADDING_LEFT: f32 = 1.0;
+pub const MAX_ROWS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LabelId(pub u32);
@@ -49,6 +52,8 @@ impl LabelEdge {
 }
 
 pub struct LabelLayout {
+    pub location: GeoLocation,
+    pub id: LabelId,
     pub label_x: f32,
     pub label_y: f32,
     pub label_width: f32,
@@ -136,26 +141,34 @@ impl TextState {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        location: &GeoLocation,
-        peak_labels: Vec<(LabelId, (u32, u32))>,
+        peak_labels: BTreeMap<GeoLocation, Vec<(LabelId, (u32, u32))>>,
     ) -> Vec<LabelLayout> {
-        let labels = self.labels.get(location).unwrap();
         let laid_out_labels = layout_labels(
             peak_labels.clone(),
-            |id| labels[id.0 as usize].width,
+            |location, id| self.labels.get(&location).unwrap()[id.0 as usize].width,
             LINE_HEIGHT + LINE_PADDING,
         );
         let text_areas = laid_out_labels
             .iter()
-            .map(|&(id, (x, y))| TextArea {
-                buffer: &labels[id.0 as usize].buffer,
-                left: x + LABEL_PADDING_LEFT,
-                top: y,
-                scale: 1.0,
-                bounds: TextBounds::default(),
-                default_color: glyphon::Color::rgb(0, 0, 0),
-                custom_glyphs: &[],
-            })
+            .map(
+                |LabelLayout {
+                     location,
+                     id,
+                     label_x,
+                     label_y,
+                     label_width: _,
+                     peak_x: _,
+                     peak_y: _,
+                 }| TextArea {
+                    buffer: &self.labels.get(&location).unwrap()[id.0 as usize].buffer,
+                    left: label_x + LABEL_PADDING_LEFT,
+                    top: *label_y,
+                    scale: 1.0,
+                    bounds: TextBounds::default(),
+                    default_color: glyphon::Color::rgb(0, 0, 0),
+                    custom_glyphs: &[],
+                },
+            )
             .collect::<Vec<_>>();
         self.text_renderer
             .prepare_with_depth(
@@ -171,64 +184,71 @@ impl TextState {
             .unwrap();
 
         laid_out_labels
-            .into_iter()
-            .zip(peak_labels.into_iter())
-            .map(
-                |((_, (label_x, label_y)), (id, (peak_x, peak_y)))| LabelLayout {
-                    label_x,
-                    label_y,
-                    label_width: labels[id.0 as usize].width,
-                    peak_x: peak_x as f32,
-                    peak_y: peak_y as f32,
-                },
-            )
-            .collect()
     }
 }
 
 fn layout_labels(
-    peak_labels: Vec<(LabelId, (u32, u32))>,
-    widths: impl Fn(LabelId) -> f32,
+    peak_labels: BTreeMap<GeoLocation, Vec<(LabelId, (u32, u32))>>,
+    widths: impl Fn(GeoLocation, LabelId) -> f32,
     line_height: f32,
-) -> Vec<(LabelId, (f32, f32))> {
-    let mut edges: Vec<BTreeSet<LabelEdge>> = vec![];
+) -> Vec<LabelLayout> {
+    let edges: Rc<RefCell<Vec<BTreeSet<LabelEdge>>>> = Rc::new(RefCell::new(vec![]));
 
     peak_labels
         .into_iter()
-        .map(|(i, (x, _))| {
-            let width = widths(i);
-            let left_edge = LabelEdge::left((x as f32).floor() as u32);
-            let right_edge = LabelEdge::right((x as f32 + width).ceil() as u32);
-            let row_i = edges
+        .flat_map(|(location, labels)| {
+            let edges = edges.clone();
+            labels
                 .iter()
-                .enumerate()
-                .filter_map(|(row_i, row)| {
-                    if row
-                        .range((Included(&left_edge), Included(&right_edge)))
+                .filter_map(|(i, (x, y))| {
+                    let width = widths(location, *i);
+                    let left_edge = LabelEdge::left((*x as f32).floor() as u32);
+                    let right_edge = LabelEdge::right((*x as f32 + width).ceil() as u32);
+                    let mut edges = edges.borrow_mut();
+                    let row_i = edges
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(row_i, row)| {
+                            if row
+                                .range((Included(&left_edge), Included(&right_edge)))
+                                .next()
+                                .is_none()
+                            {
+                                match row.range((Included(&right_edge), Unbounded)).next() {
+                                    // If the first edge to the right is the right end of another label here
+                                    // it means that label is both further to the left and further to the right
+                                    Some(LabelEdge {
+                                        side: Side::Right, ..
+                                    }) => None,
+                                    _ => Some(row_i),
+                                }
+                            } else {
+                                None
+                            }
+                        })
                         .next()
-                        .is_none()
-                    {
-                        match row.range((Included(&right_edge), Unbounded)).next() {
-                            // If the first edge to the right is the right end of another label here
-                            // it means that label is both further to the left and further to the right
-                            Some(LabelEdge {
-                                side: Side::Right, ..
-                            }) => None,
-                            _ => Some(row_i),
-                        }
+                        .unwrap_or_else(|| {
+                            edges.push(BTreeSet::new());
+                            edges.len() - 1
+                        });
+                    if row_i < MAX_ROWS {
+                        edges[row_i].insert(left_edge);
+                        edges[row_i].insert(right_edge);
+
+                        Some(LabelLayout {
+                            location,
+                            id: *i,
+                            label_x: *x as f32,
+                            label_y: line_height as f32 * (0.5 + row_i as f32),
+                            label_width: width,
+                            peak_x: *x as f32,
+                            peak_y: *y as f32,
+                        })
                     } else {
                         None
                     }
                 })
-                .next()
-                .unwrap_or_else(|| {
-                    edges.push(BTreeSet::new());
-                    edges.len() - 1
-                });
-            edges[row_i].insert(left_edge);
-            edges[row_i].insert(right_edge);
-
-            (i, (x as f32, line_height as f32 * (0.5 + row_i as f32)))
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -267,9 +287,21 @@ mod tests {
             .enumerate()
             .map(|(i, position)| (LabelId(i as u32), (position, 0)))
             .collect::<Vec<_>>();
-        let layout = layout_labels(labels, |id| widths[&id], 1.0)
+        let mut labels_map = BTreeMap::new();
+        labels_map.insert(GeoLocation::from_coord(0, 0), labels);
+        let layout = layout_labels(labels_map, |_, id| widths[&id], 1.0)
             .into_iter()
-            .map(|(id, (x, y))| (id, (x.floor() as u32, y.floor() as u32)))
+            .map(
+                |LabelLayout {
+                     location: _,
+                     id,
+                     label_x,
+                     label_y,
+                     label_width: _,
+                     peak_x: _,
+                     peak_y: _,
+                 }| (id, (label_x.floor() as u32, label_y.floor() as u32)),
+            )
             .collect::<Vec<_>>();
         let expected = expected_positions
             .into_iter()

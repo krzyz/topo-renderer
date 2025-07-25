@@ -1,9 +1,8 @@
 use super::data::Vertex;
 
 use glam::Vec3;
-use std::f32::consts::PI;
 
-const R0: f32 = 6371000.0;
+pub const R0: f32 = 6371000.0;
 
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
@@ -64,18 +63,12 @@ pub fn generate_icosahedron(scale: Vec3) -> Mesh {
     Mesh { vertices, indices }
 }
 
-pub fn transform(h: f32, lambda_deg: f32, phi_deg: f32, lambda_0_deg: f32, phi_0_deg: f32) -> Vec3 {
+pub fn transform(h: f32, lambda_deg: f32, phi_deg: f32) -> Vec3 {
     let r = R0 + h;
-    let phi = phi_deg / 180.0 * PI;
-    let lambda = lambda_deg / 180.0 * PI;
-    let phi_0 = phi_0_deg / 180.0 * PI;
-    let lambda_0 = lambda_0_deg / 180.0 * PI;
-    let dphi = phi - phi_0;
-    let dlambda = lambda - lambda_0;
-    // y is up
-    let x = -r * (dphi.sin() * dlambda.cos() + (1.0 - dlambda.cos()) * phi.sin() * phi_0.cos());
-    let y = r * (dphi.cos() * dlambda.cos() + (1.0 - dlambda.cos()) * phi.sin() * phi_0.sin()) - R0;
-    let z = r * phi.cos() * dlambda.sin();
-
+    let phi = phi_deg.to_radians();
+    let lambda = lambda_deg.to_radians();
+    let x = r * lambda.cos() * phi.cos();
+    let y = r * lambda.cos() * phi.sin();
+    let z = -r * lambda.sin();
     Vec3::new(x, y, z)
 }

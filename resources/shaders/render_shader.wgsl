@@ -5,9 +5,8 @@ struct Uniforms {
     projection: mat4x4<f32>,
     normal_projection: mat4x4<f32>,
     camera_pos: vec4<f32>,
-    lambda_phi_h: vec3<f32>,
-    view_mode: i32,
     sun_direction: vec3<f32>,
+    view_mode: i32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -36,7 +35,7 @@ fn vs_main(
 
     out.color = vec3<f32>(1.0, 1.0, 1.0);
     out.world_position = position;
-    out.world_normal = 0.5 * (normalize(model.normal.xzy) + vec3<f32>(1.0));
+    out.world_normal = normalize(model.normal.xzy);
 
     out.clip_position = uniforms.projection * vec4<f32>(position, 1.0);
     return out;
@@ -69,9 +68,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let light_color = vec3<f32>(1.0, 1.0, 1.0);
     let light_position = vec3<f32>(100000.0, 1000000.0, 150000.0);
 
-    let diffuse_strength = 0.7 * max(dot(in.world_normal, uniforms.sun_direction), 0.0);
+    let diffuse_strength = 0.7 * max(dot(normalize(in.world_normal), uniforms.sun_direction), 0.0);
     let diffuse_color = light_color * diffuse_strength;
-
 
     let ambient_color = light_color * ambient_strength;
     let result_lin = (ambient_color + diffuse_color) * in.color;

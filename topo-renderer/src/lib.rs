@@ -5,6 +5,7 @@ pub mod render;
 
 use render::state::{State, StateEvent};
 use std::sync::Arc;
+use topo_common::GeoCoord;
 use wasm_bindgen::prelude::*;
 use winit::{
     application::ApplicationHandler,
@@ -80,9 +81,13 @@ impl ApplicationHandler<UserEvent> for Application {
         {
             env_logger::init();
 
-            let state = futures::executor::block_on(async move {
+            let mut state = futures::executor::block_on(async move {
                 State::new(window, event_loop_proxy, settings).await
             });
+
+            let coord_0 = GeoCoord::new(49.36991, 20.13715);
+            state.set_coord_0(coord_0);
+
             self.state = Some(state);
         }
         #[cfg(target_arch = "wasm32")]
@@ -110,6 +115,8 @@ impl ApplicationHandler<UserEvent> for Application {
                 match receiver.try_recv() {
                     Ok(Some(mut state)) => {
                         log::info!("Received new state");
+                        let coord_0 = GeoCoord::new(49.36991, 20.13715);
+                        state.set_coord_0(coord_0);
                         state.window().request_redraw();
                         if let Some(physical_size) = self.resized.take() {
                             self.surface_configured = true;

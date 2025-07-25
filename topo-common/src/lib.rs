@@ -36,6 +36,36 @@ pub struct GeoLocation {
     pub longitude: Longitude,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct GeoCoord {
+    pub latitude: f32,
+    pub longitude: f32,
+}
+
+impl Into<f32> for Latitude {
+    fn into(self) -> f32 {
+        match self.direction {
+            LatitudeDirection::S => -self.degree as f32,
+            LatitudeDirection::N => self.degree as f32,
+        }
+    }
+}
+
+impl Into<f32> for Longitude {
+    fn into(self) -> f32 {
+        match self.direction {
+            LongitudeDirection::E => self.degree as f32,
+            LongitudeDirection::W => -self.degree as f32,
+        }
+    }
+}
+
+impl From<GeoCoord> for (f64, f64) {
+    fn from(value: GeoCoord) -> Self {
+        (value.longitude as f64, value.latitude as f64)
+    }
+}
+
 impl std::fmt::Display for Latitude {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.degree.to_string().as_str(), self.direction)
@@ -48,9 +78,61 @@ impl std::fmt::Display for Longitude {
     }
 }
 
+impl From<GeoCoord> for GeoLocation {
+    fn from(value: GeoCoord) -> Self {
+        Self::from_coord(
+            value.latitude.floor() as i32,
+            value.longitude.floor() as i32,
+        )
+    }
+}
+
+impl From<GeoLocation> for GeoCoord {
+    fn from(value: GeoLocation) -> Self {
+        Self {
+            latitude: value.latitude.into(),
+            longitude: value.longitude.into(),
+        }
+    }
+}
+
 impl GeoLocation {
+    pub fn from_coord(latitude: i32, longitude: i32) -> Self {
+        Self {
+            latitude: Latitude {
+                degree: latitude.abs(),
+                direction: if latitude.signum() > 0 {
+                    LatitudeDirection::N
+                } else {
+                    LatitudeDirection::S
+                },
+            },
+            longitude: Longitude {
+                degree: longitude.abs() as i32,
+                direction: if longitude.signum() > 0 {
+                    LongitudeDirection::E
+                } else {
+                    LongitudeDirection::W
+                },
+            },
+        }
+    }
+
     pub fn to_request_params(&self) -> String {
         format!("latitude={}&longitude={}", self.latitude, self.longitude)
+    }
+
+    pub fn to_numerical(&self) -> (f32, f32) {
+        (self.latitude.into(), self.longitude.into())
+    }
+}
+
+impl GeoCoord {
+    pub fn new(latitude: f32, longitude: f32) -> Self {
+        Self {
+            latitude,
+            longitude,
+        }
     }
 }
 

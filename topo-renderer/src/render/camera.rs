@@ -154,6 +154,9 @@ impl Camera {
     }
 
     pub fn rotate_pitch(&mut self, clockwise_rotation: f32) {
-        self.set_pitch(self.pitch + clockwise_rotation);
+        let new_pitch = self.pitch + clockwise_rotation;
+        if new_pitch <= 90.0f32.to_radians() {
+            self.set_pitch(self.pitch + clockwise_rotation);
+        }
     }
 }

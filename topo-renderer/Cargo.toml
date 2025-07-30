@@ -30,6 +30,7 @@ approx = "0.5.1"
 glyphon = "0.9.0"
 futures = "0.3.31"
 lyon = "1.0.1"
+strum = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-time = "1.0.1"

@@ -7,7 +7,7 @@ edition = "2024"
 topo-common = { path = "../topo-common" }
 axum = "0.8.4"
 serde = { workspace = true }
-strum = { version = "0.27.1", features = ["derive"] }
+strum = { workspace = true }
 tokio = { version = "1.46.1", features = ["fs", "rt-multi-thread"] }
 tower-http = { version = "0.6.6", features = ["compression-zstd", "cors"] }
 tower = "0.5.2"

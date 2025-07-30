@@ -109,12 +109,12 @@ impl ApplicationHandler<UserEvent> for Application {
         event: WindowEvent,
     ) {
         if self.state.is_none() {
-            log::info!("Checking if state ready");
+            log::debug!("Checking if state ready");
             if let Some(ref mut receiver) = self.receiver {
-                log::info!("Getting the receiver");
+                log::debug!("Getting the receiver");
                 match receiver.try_recv() {
                     Ok(Some(mut state)) => {
-                        log::info!("Received new state");
+                        log::debug!("Received new state");
                         let coord_0 = GeoCoord::new(49.36991, 20.13715);
                         state.set_coord_0(coord_0);
                         state.window().request_redraw();
@@ -128,10 +128,10 @@ impl ApplicationHandler<UserEvent> for Application {
                         self.state = Some(state);
                     }
                     Ok(None) => {
-                        log::info!("None state received?");
+                        log::debug!("None state received?");
                     }
                     Err(err) => {
-                        log::info!("canceled error: {err}");
+                        log::debug!("canceled error: {err}");
                     }
                 }
             }

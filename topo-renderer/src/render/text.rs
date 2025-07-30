@@ -77,7 +77,7 @@ impl TextState {
         config: &wgpu::SurfaceConfiguration,
         depth_stencil: Option<wgpu::DepthStencilState>,
     ) -> Self {
-        let swapchain_format = config.format.add_srgb_suffix();
+        let swapchain_format = config.format;
         let mut font_system = FontSystem::new();
         let font = include_bytes!("../../../resources/Roboto-Regular.ttf");
         font_system.db_mut().load_font_data(font.to_vec());

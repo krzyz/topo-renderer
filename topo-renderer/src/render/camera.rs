@@ -62,8 +62,8 @@ impl Default for Camera {
             pitch: 0.0,
             yaw: 0.0,
             fov_y: 45.0,
-            near: 10.0,
-            far: 1000000.0,
+            near: 50.0,
+            far: 500000.0,
             view_mode: ViewMode::default(),
             // TODO: Move elsewhere as it's not a part of the camera
             sun_angle: LightAngle {

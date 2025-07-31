@@ -44,7 +44,7 @@ struct VertexOutput {
 
 fn scale_depth(depth: f32) -> f32 {
     let x = 1.0 / depth - 1.0;
-    return 1.0 / (5000 * x + 1);
+    return 1.0 / (500 * x + 1);
 }
 
 fn to_uv(pixel_pos: vec2<f32>) -> vec2<f32> {

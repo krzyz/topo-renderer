@@ -2,7 +2,7 @@ use super::data::Vertex;
 
 use glam::Vec3;
 
-pub const R0: f32 = 6371000.0;
+pub const R0: f32 = 6_371_000.0;
 
 pub struct Mesh {
     pub vertices: Vec<Vertex>,

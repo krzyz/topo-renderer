@@ -1,4 +1,5 @@
 use super::state::PeakInstance;
+use glyphon::fontdb::{Database, Source};
 use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Shaping, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer, Viewport,
@@ -7,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
+use std::sync::Arc;
 use topo_common::GeoLocation;
 use wgpu::MultisampleState;
 
@@ -14,6 +16,18 @@ pub const LINE_HEIGHT: f32 = 16.0;
 pub const LINE_PADDING: f32 = 4.0;
 pub const LABEL_PADDING_LEFT: f32 = 1.0;
 pub const MAX_ROWS: usize = 8;
+
+thread_local! {
+    pub static FONT_SYSTEM: RefCell<FontSystem> = {
+        let font_source = Source::Binary(Arc::new(include_bytes!(
+            "../../../resources/Roboto-Regular.ttf"
+        )));
+        let mut font_db = Database::new();
+        font_db.load_font_source(font_source);
+
+        RefCell::new(FontSystem::new_with_locale_and_db(String::from("en-US"), font_db))
+    };
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LabelId(pub u32);
@@ -62,7 +76,6 @@ pub struct LabelLayout {
 }
 
 pub struct TextState {
-    pub font_system: FontSystem,
     pub swash_cache: SwashCache,
     pub viewport: Viewport,
     pub atlas: TextAtlas,
@@ -78,9 +91,7 @@ impl TextState {
         depth_stencil: Option<wgpu::DepthStencilState>,
     ) -> Self {
         let swapchain_format = config.format;
-        let mut font_system = FontSystem::new();
-        let font = include_bytes!("../../../resources/Roboto-Regular.ttf");
-        font_system.db_mut().load_font_data(font.to_vec());
+
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
         let viewport = Viewport::new(device, &cache);
@@ -95,7 +106,6 @@ impl TextState {
         let labels = BTreeMap::new();
 
         Self {
-            font_system,
             swash_cache,
             viewport,
             atlas,
@@ -110,22 +120,25 @@ impl TextState {
             .unwrap();
     }
 
-    pub fn prepare_peak_labels(&mut self, location: GeoLocation, peaks: &Vec<PeakInstance>) {
+    pub fn add_labels(&mut self, location: GeoLocation, labels: Vec<Label>) {
+        self.labels.insert(location, labels);
+    }
+
+    pub fn prepare_peak_labels(peaks: &Vec<PeakInstance>) -> Vec<Label> {
         let metric = Metrics::new(12.0, LINE_HEIGHT as f32);
-        self.labels.insert(
-            location,
+        FONT_SYSTEM.with_borrow_mut(|mut font_system| {
             peaks
                 .iter()
                 .map(|peak| {
-                    let mut buffer = Buffer::new(&mut self.font_system, metric);
-                    buffer.set_size(&mut self.font_system, None, None);
+                    let mut buffer = Buffer::new(&mut font_system, metric);
+                    buffer.set_size(&mut font_system, None, None);
                     buffer.set_text(
-                        &mut self.font_system,
+                        &mut font_system,
                         peak.name.as_str(),
                         &Attrs::new().family(Family::SansSerif),
                         Shaping::Advanced,
                     );
-                    buffer.shape_until_scroll(&mut self.font_system, false);
+                    buffer.shape_until_scroll(&mut font_system, false);
                     let width = buffer
                         .layout_runs()
                         .next()
@@ -133,8 +146,8 @@ impl TextState {
                         .line_w;
                     Label { buffer, width }
                 })
-                .collect::<Vec<_>>(),
-        );
+                .collect::<Vec<_>>()
+        })
     }
 
     pub fn prepare(
@@ -145,7 +158,11 @@ impl TextState {
     ) -> Vec<LabelLayout> {
         let laid_out_labels = layout_labels(
             peak_labels.clone(),
-            |location, id| self.labels.get(&location).unwrap()[id.0 as usize].width,
+            |location, id| {
+                self.labels
+                    .get(&location)
+                    .map(|labels| labels[id.0 as usize].width)
+            },
             LINE_HEIGHT + LINE_PADDING,
         );
         let text_areas = laid_out_labels
@@ -170,26 +187,67 @@ impl TextState {
                 },
             )
             .collect::<Vec<_>>();
-        self.text_renderer
-            .prepare_with_depth(
-                device,
-                queue,
-                &mut self.font_system,
-                &mut self.atlas,
-                &mut self.viewport,
-                text_areas,
-                &mut self.swash_cache,
-                |_| 100.0 / 4096.0,
-            )
-            .unwrap();
+        FONT_SYSTEM.with_borrow_mut(|mut font_system| {
+            self.text_renderer
+                .prepare_with_depth(
+                    device,
+                    queue,
+                    &mut font_system,
+                    &mut self.atlas,
+                    &mut self.viewport,
+                    text_areas,
+                    &mut self.swash_cache,
+                    |_| 100.0 / 4096.0,
+                )
+                .unwrap();
+        });
 
         laid_out_labels
     }
 }
 
+fn process_label_layout(edges: &mut Vec<BTreeSet<LabelEdge>>, x: u32, width: f32) -> Option<usize> {
+    let left_edge = LabelEdge::left((x as f32).floor() as u32);
+    let right_edge = LabelEdge::right((x as f32 + width).ceil() as u32);
+    let row_i = edges
+        .iter()
+        .enumerate()
+        .filter_map(|(row_i, row)| {
+            if row
+                .range((Included(&left_edge), Included(&right_edge)))
+                .next()
+                .is_none()
+            {
+                match row.range((Included(&right_edge), Unbounded)).next() {
+                    // If the first edge to the right is the right end of another label here
+                    // it means that label is both further to the left and further to the right
+                    Some(LabelEdge {
+                        side: Side::Right, ..
+                    }) => None,
+                    _ => Some(row_i),
+                }
+            } else {
+                None
+            }
+        })
+        .next()
+        .unwrap_or_else(|| {
+            edges.push(BTreeSet::new());
+            edges.len() - 1
+        });
+    if row_i < MAX_ROWS {
+        edges[row_i].insert(left_edge);
+        edges[row_i].insert(right_edge);
+
+        Some(row_i)
+    } else {
+        None
+    }
+}
+
 fn layout_labels(
     peak_labels: BTreeMap<GeoLocation, Vec<(LabelId, (u32, u32))>>,
-    widths: impl Fn(GeoLocation, LabelId) -> f32,
+    widths: impl Fn(GeoLocation, LabelId) -> Option<f32>,
     line_height: f32,
 ) -> Vec<LabelLayout> {
     let edges: Rc<RefCell<Vec<BTreeSet<LabelEdge>>>> = Rc::new(RefCell::new(vec![]));
@@ -201,41 +259,10 @@ fn layout_labels(
             labels
                 .iter()
                 .filter_map(|(i, (x, y))| {
-                    let width = widths(location, *i);
-                    let left_edge = LabelEdge::left((*x as f32).floor() as u32);
-                    let right_edge = LabelEdge::right((*x as f32 + width).ceil() as u32);
-                    let mut edges = edges.borrow_mut();
-                    let row_i = edges
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(row_i, row)| {
-                            if row
-                                .range((Included(&left_edge), Included(&right_edge)))
-                                .next()
-                                .is_none()
-                            {
-                                match row.range((Included(&right_edge), Unbounded)).next() {
-                                    // If the first edge to the right is the right end of another label here
-                                    // it means that label is both further to the left and further to the right
-                                    Some(LabelEdge {
-                                        side: Side::Right, ..
-                                    }) => None,
-                                    _ => Some(row_i),
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .next()
-                        .unwrap_or_else(|| {
-                            edges.push(BTreeSet::new());
-                            edges.len() - 1
-                        });
-                    if row_i < MAX_ROWS {
-                        edges[row_i].insert(left_edge);
-                        edges[row_i].insert(right_edge);
+                    if let Some(width) = widths(location, *i) {
+                        let mut edges = edges.borrow_mut();
 
-                        Some(LabelLayout {
+                        process_label_layout(&mut edges, *x, width).map(|row_i| LabelLayout {
                             location,
                             id: *i,
                             label_x: *x as f32,
@@ -289,7 +316,7 @@ mod tests {
             .collect::<Vec<_>>();
         let mut labels_map = BTreeMap::new();
         labels_map.insert(GeoLocation::from_coord(0, 0), labels);
-        let layout = layout_labels(labels_map, |_, id| widths[&id], 1.0)
+        let layout = layout_labels(labels_map, |_, id| widths.get(&id).copied(), 1.0)
             .into_iter()
             .map(
                 |LabelLayout {

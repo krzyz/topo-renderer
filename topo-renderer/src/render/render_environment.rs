@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use geotiff::GeoTiff;
 use topo_common::GeoLocation;
 use wgpu::RenderPass;
 
@@ -9,7 +8,7 @@ use crate::common::data::{Size, pad_256};
 use super::{
     bound_texture_view::BoundTextureView,
     buffer::Buffer,
-    data::{PostprocessingUniforms, Uniforms},
+    data::{PostprocessingUniforms, Uniforms, Vertex},
     pipeline::Pipeline,
     render_buffer::RenderBuffer,
     texture::Texture,
@@ -163,18 +162,19 @@ impl RenderEnvironment {
         );
     }
 
-    pub fn add_terrain_data(
+    pub fn add_terrain(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         location: GeoLocation,
-        geotiff: &GeoTiff,
+        vertices: &Vec<Vertex>,
+        indices: &Vec<u32>,
     ) {
-        self.render_buffers.insert(location, {
-            let mut buffer = RenderBuffer::new(device);
-            buffer.add_terrain(device, queue, geotiff);
-            buffer
-        });
+        let mut render_buffer = RenderBuffer::new(device);
+
+        render_buffer.add_terrain(device, queue, vertices, indices);
+
+        self.render_buffers.insert(location, render_buffer);
     }
 
     pub fn render<'a>(

@@ -6,11 +6,12 @@ use crate::{ApplicationSettings, UserEvent};
 
 use super::camera::Camera;
 use super::camera_controller::CameraController;
-use super::data::{PostprocessingUniforms, Uniforms};
+use super::data::{PostprocessingUniforms, Uniforms, Vertex};
 use super::geometry::R0;
 use super::lines::LineRenderer;
+use super::render_buffer::RenderBuffer;
 use super::render_environment::RenderEnvironment;
-use super::text::{LabelId, TextState};
+use super::text::{Label, LabelId, TextState};
 use bytes::{Buf, Bytes};
 use color_eyre::Result;
 use geotiff::GeoTiff;
@@ -49,6 +50,8 @@ pub enum Message {
     DepthBufferReady(DepthState),
     TerrainQueued(GeoLocation),
     TerrainReceived((GeoLocation, GeoTiff, Vec<PeakInstance>)),
+    TerrainProcessed(GeoLocation, Vec<Vertex>, Vec<u32>),
+    PeakLabelsPrepared(GeoLocation, Vec<Label>),
 }
 
 #[derive(Clone)]
@@ -389,20 +392,30 @@ impl State {
                             .send(Message::TerrainReceived((location, gtiff, peaks)))
                             .unwrap();
                     };
+
+                    log::debug!(
+                        "Spawning terrain fetch for location {:?}",
+                        location.to_numerical()
+                    );
+
                     #[cfg(not(target_arch = "wasm32"))]
                     tokio::spawn(future);
                     #[cfg(target_arch = "wasm32")]
                     wasm_bindgen_futures::spawn_local(future);
-                }
 
+                    log::debug!(
+                        "Spawned terrain fetch for location {:?}",
+                        location.to_numerical()
+                    );
+                }
                 Message::TerrainReceived((location, gtiff, peaks)) => {
+                    log::debug!(
+                        "Running terrain received for location {:?}",
+                        location.to_numerical()
+                    );
                     self.uniforms = Uniforms::new(&self.camera, bounds);
 
-                    self.text_state.prepare_peak_labels(location, &peaks);
-
-                    self.peaks.insert(location, peaks);
-
-                    self.add_terrain(location, &gtiff);
+                    self.peaks.insert(location, peaks.clone());
 
                     if let Some(coord_0) = self.coord_0 {
                         if GeoLocation::from(coord_0) == location {
@@ -411,9 +424,63 @@ impl State {
                                 .unwrap();
 
                             self.camera.reset(coord_0, height + 10.0);
+
+                            changed = true;
                         }
                     }
 
+                    let sender = self.sender.clone();
+                    let process_terrain = move || {
+                        let (vertices, indices) = RenderBuffer::process_terrain(&gtiff);
+                        sender
+                            .send(Message::TerrainProcessed(location, vertices, indices))
+                            .ok();
+                    };
+
+                    let sender = self.sender.clone();
+                    let prepare_peak_labels = move || {
+                        let labels = TextState::prepare_peak_labels(&peaks);
+                        sender
+                            .send(Message::PeakLabelsPrepared(location, labels))
+                            .ok();
+                    };
+
+                    log::debug!(
+                        "Spawning terrain processing for location {:?}",
+                        location.to_numerical()
+                    );
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        tokio::task::spawn_blocking(process_terrain);
+                        tokio::task::spawn_blocking(prepare_peak_labels);
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        process_terrain();
+                        prepare_peak_labels();
+                    }
+                    log::debug!(
+                        "Spawned terrain processing for location {:?}",
+                        location.to_numerical()
+                    );
+                }
+                Message::TerrainProcessed(location, vertices, indices) => {
+                    log::debug!("Adding terrain for location {:?}", location.to_numerical());
+                    self.render_environment.add_terrain(
+                        &self.device,
+                        &self.queue,
+                        location,
+                        &vertices,
+                        &indices,
+                    );
+                    log::debug!("Added terrain for location {:?}", location.to_numerical());
+
+                    changed = true;
+                }
+                Message::PeakLabelsPrepared(location, labels) => {
+                    log::debug!("Adding labels for location {:?}", location.to_numerical());
+                    self.text_state.add_labels(location, labels);
+                    log::debug!("Added labels for location {:?}", location.to_numerical());
                     changed = true;
                 }
             }
@@ -573,16 +640,19 @@ impl State {
 
     pub fn set_coord_0(&mut self, location: GeoCoord) {
         self.coord_0 = Some(location);
-        Self::get_locations_range(location)
+        Self::get_locations_range(location, 100_000.0)
             .into_iter()
             .for_each(|to_fetch| {
                 self.sender.send(Message::TerrainQueued(to_fetch)).unwrap();
             });
     }
 
-    fn get_locations_range(location: GeoCoord) -> Vec<GeoLocation> {
+    fn get_locations_range(location: GeoCoord, range_dist: f32) -> Vec<GeoLocation> {
         // TODO: handle projection edges (90NS/180EW deg)
-        let range_dist = 100000.; // 100 km
+        let center = (
+            location.latitude.floor() as i32,
+            location.longitude.floor() as i32,
+        );
         let lat_cos = (location.latitude.to_radians()).cos();
         let arc_factor = 0.5 * range_dist / R0;
         let arc_factor_sin = arc_factor.sin();
@@ -596,15 +666,9 @@ impl State {
 
         (lat_start..=lat_end)
             .cartesian_product(lon_start..=lon_end)
+            .sorted_by_key(|(lat, lon)| ((lat - center.0).abs(), (lon - center.1).abs()))
             .map(|(lat, lon)| GeoLocation::from_coord(lat, lon).into())
             .collect()
-    }
-
-    fn add_terrain(&mut self, location: GeoLocation, geotiff: &GeoTiff) {
-        log::debug!("Adding terrain");
-        self.render_environment
-            .add_terrain_data(&self.device, &self.queue, location, &geotiff);
-        log::debug!("Added terrain");
     }
 }
 
@@ -614,9 +678,16 @@ mod tests {
 
     #[test]
     fn check_range() {
-        let locations = State::get_locations_range(GeoCoord::new(52.1, 20.1));
+        let locations = State::get_locations_range(GeoCoord::new(52.1, 20.1), 100_000.0);
 
-        let expected = vec![];
+        let expected = vec![
+            GeoLocation::from_coord(52, 20),
+            GeoLocation::from_coord(52, 19),
+            GeoLocation::from_coord(52, 21),
+            GeoLocation::from_coord(51, 20),
+            GeoLocation::from_coord(51, 19),
+            GeoLocation::from_coord(51, 21),
+        ];
 
         assert_eq!(locations, expected);
     }

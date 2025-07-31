@@ -1,5 +1,4 @@
 use geotiff::GeoTiff;
-use log::debug;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{buffer::Buffer, data::Vertex, geometry::transform};
@@ -48,9 +47,36 @@ impl RenderBuffer {
             num_indices: 0,
         }
     }
-
     pub fn get_terrain_range(&self) -> std::ops::Range<u32> {
         (0)..self.get_num_indices()
+    }
+
+    pub fn add_terrain(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        vertices: &Vec<Vertex>,
+        indices: &Vec<u32>,
+    ) {
+        let new_vertices_size = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
+        if new_vertices_size != self.vertices.raw.size() {
+            self.vertices.resize(device, new_vertices_size);
+        }
+
+        queue.write_buffer(
+            &self.vertices.raw,
+            0,
+            bytemuck::cast_slice(vertices.as_slice()),
+        );
+
+        self.num_indices = indices.len() as u32;
+        let new_indices_size = indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+        self.indices.resize(device, new_indices_size);
+        queue.write_buffer(
+            &self.indices.raw,
+            0,
+            bytemuck::cast_slice(indices.as_slice()),
+        );
     }
 
     fn generate_indices(
@@ -74,14 +100,16 @@ impl RenderBuffer {
                     let br = i + 1;
                     let tl = i + raster_height;
                     let tr = i + raster_height + 1;
-                    let bltr = (vert.position.length()
-                        - vertices.get(tr).unwrap().position.length())
-                    .abs();
-                    let brtl = (vertices.get(br).unwrap().position.length()
-                        - vertices.get(tl).unwrap().position.length())
-                    .abs();
-
-                    if brtl > bltr {
+                    let bl_height = vert.position.length();
+                    let br_height = vertices.get(br).unwrap().position.length();
+                    let tl_height = vertices.get(tl).unwrap().position.length();
+                    let tr_height = vertices.get(tr).unwrap().position.length();
+                    let bltr = (bl_height - tr_height).abs();
+                    let brtl = (br_height - tl_height).abs();
+                    if br_height.min(tl_height) > bl_height.max(tr_height)
+                        || bl_height.min(tr_height) < br_height.max(tl_height)
+                        || bltr > brtl
+                    {
                         inds.push(br);
                         inds.push(bl);
                         inds.push(tl);
@@ -104,7 +132,7 @@ impl RenderBuffer {
             .collect::<Vec<_>>()
     }
 
-    pub fn add_terrain(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, geotiff: &GeoTiff) {
+    pub fn process_terrain(geotiff: &GeoTiff) -> (Vec<Vertex>, Vec<u32>) {
         let raster_width = geotiff.raster_width;
         let raster_height = geotiff.raster_height;
 
@@ -116,17 +144,23 @@ impl RenderBuffer {
 
         let geotiff_min = geotiff.model_extent().min();
 
-        let mut vertices = //iproduct!(0..raster_width, 0..raster_height)
-            (0..raster_width).into_par_iter().flat_map(|row| (0..raster_height).into_iter().map(|col| {
-                let lambda = (0.5 + row as f64) * dx;
-                let phi = (0.5 + col as f64) * dy;
-                let coord = geotiff_min + (lambda, phi).into();
-                let height = geotiff.get_value_at(&coord, 0).expect(&format!(
-                    "Unable to find value for {coord:#?} (row {row}, col {col}"
-                ));
-                let position = transform(height, coord.y as f32, coord.x as f32);
-                Vertex::new(position, glam::Vec3::ZERO)
-            }).collect::<Vec<_>>())
+        let mut vertices = (0..raster_width)
+            .into_par_iter()
+            .flat_map(|row| {
+                (0..raster_height)
+                    .into_iter()
+                    .map(|col| {
+                        let lambda = (0.5 + row as f64) * dx;
+                        let phi = (0.5 + col as f64) * dy;
+                        let coord = geotiff_min + (lambda, phi).into();
+                        let height = geotiff.get_value_at(&coord, 0).expect(&format!(
+                            "Unable to find value for {coord:#?} (row {row}, col {col}"
+                        ));
+                        let position = transform(height, coord.y as f32, coord.x as f32);
+                        Vertex::new(position, glam::Vec3::ZERO)
+                    })
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
 
         let indices = Self::generate_indices(&vertices, raster_width, raster_height);
@@ -150,34 +184,6 @@ impl RenderBuffer {
             }
         }
 
-        vertices.iter().take(5).for_each(|v| {
-            debug!("Terrain vertex position: {:#?}", v.position);
-            debug!("Terrain vertex normal: {:#?}", v.normal);
-        });
-
-        vertices.iter().rev().take(5).for_each(|v| {
-            debug!("Terrain vertex position: {:#?}", v.position);
-            debug!("Terrain vertex normal: {:#?}", v.normal);
-        });
-
-        let new_vertices_size = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
-        if new_vertices_size != self.vertices.raw.size() {
-            self.vertices.resize(device, new_vertices_size);
-        }
-
-        queue.write_buffer(
-            &self.vertices.raw,
-            0,
-            bytemuck::cast_slice(vertices.as_slice()),
-        );
-
-        self.num_indices = indices.len() as u32;
-        let new_indices_size = indices.len() as u64 * std::mem::size_of::<u32>() as u64;
-        self.indices.resize(device, new_indices_size);
-        queue.write_buffer(
-            &self.indices.raw,
-            0,
-            bytemuck::cast_slice(indices.as_slice()),
-        );
+        (vertices, indices)
     }
 }

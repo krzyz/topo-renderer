@@ -33,16 +33,17 @@
           wayland
         ];
 
-        packages =
-          [ toolchain ]
-          ++ (with pkgs; [
-            evcxr
-            rust-analyzer-unwrapped
-            cargo-edit
-            wasm-pack
-            trunk
-            wgsl-analyzer
-          ]);
+        packages = [
+          toolchain
+        ]
+        ++ (with pkgs; [
+          rust-analyzer-unwrapped
+          cargo-edit
+          wasm-pack
+          trunk
+          wgsl-analyzer
+          just
+        ]);
 
         RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
 

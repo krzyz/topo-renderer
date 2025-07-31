@@ -1,10 +1,5 @@
-use topo_renderer::start;
+use topo_renderer::async_main;
 
-use color_eyre::Result;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    start();
-
-    Ok(())
+fn main() {
+    async_main()
 }

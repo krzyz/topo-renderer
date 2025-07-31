@@ -17,13 +17,13 @@ use color_eyre::Result;
 use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
-use log::debug;
 use std::collections::{BTreeMap, HashSet};
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+use tokio_with_wasm::alias as tokio;
 use topo_common::{GeoCoord, GeoLocation};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
@@ -210,7 +210,6 @@ impl State {
         let mut line_renderer = LineRenderer::new(&device, format);
         line_renderer.prepare(&device, &queue, vec![]);
 
-        debug!("Finished State::new()");
         Self {
             event_loop_proxy,
             surface,
@@ -262,7 +261,6 @@ impl State {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            debug!("Updating size");
             // TODO: Might be a better way to do this; buffer gets touched during resize
             // so we unmap it so that there's no chance of crashing
             self.render_environment.get_depth_read_buffer_mut().unmap();
@@ -352,7 +350,6 @@ impl State {
 
                                             if projected_point.z < 1.000001 * depth_value {
                                                 peak.visible = true;
-                                                //debug!("visible");
                                                 (i, peak, Some((x_pos, y_pos)))
                                             } else {
                                                 (i, peak, None)
@@ -384,9 +381,11 @@ impl State {
                     self.render_environment.get_depth_read_buffer_mut().unmap();
                 }
                 Message::TerrainQueued(location) => {
+                    log::info!("Terrain queued, fetching data");
                     let backend_url = self.settings.backend_url.clone();
                     let sender = self.sender.clone();
                     let future = async move {
+                        log::info!("Running future");
                         let (gtiff, peaks) =
                             Self::fetch_dem_data(&backend_url, location).await.unwrap();
 
@@ -395,26 +394,9 @@ impl State {
                             .unwrap();
                     };
 
-                    log::debug!(
-                        "Spawning terrain fetch for location {:?}",
-                        location.to_numerical()
-                    );
-
-                    #[cfg(not(target_arch = "wasm32"))]
                     tokio::spawn(future);
-                    #[cfg(target_arch = "wasm32")]
-                    wasm_bindgen_futures::spawn_local(future);
-
-                    log::debug!(
-                        "Spawned terrain fetch for location {:?}",
-                        location.to_numerical()
-                    );
                 }
                 Message::TerrainReceived((location, gtiff, peaks)) => {
-                    log::debug!(
-                        "Running terrain received for location {:?}",
-                        location.to_numerical()
-                    );
                     self.uniforms = Uniforms::new(&self.camera, bounds);
 
                     self.peaks.insert(location, peaks.clone());
@@ -447,27 +429,10 @@ impl State {
                             .ok();
                     };
 
-                    log::debug!(
-                        "Spawning terrain processing for location {:?}",
-                        location.to_numerical()
-                    );
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        tokio::task::spawn_blocking(process_terrain);
-                        tokio::task::spawn_blocking(prepare_peak_labels);
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        process_terrain();
-                        prepare_peak_labels();
-                    }
-                    log::debug!(
-                        "Spawned terrain processing for location {:?}",
-                        location.to_numerical()
-                    );
+                    tokio::task::spawn_blocking(process_terrain);
+                    tokio::task::spawn_blocking(prepare_peak_labels);
                 }
                 Message::TerrainProcessed(location, vertices, indices) => {
-                    log::debug!("Adding terrain for location {:?}", location.to_numerical());
                     self.render_environment.add_terrain(
                         &self.device,
                         &self.queue,
@@ -475,14 +440,11 @@ impl State {
                         &vertices,
                         &indices,
                     );
-                    log::debug!("Added terrain for location {:?}", location.to_numerical());
 
                     changed = true;
                 }
                 Message::PeakLabelsPrepared(location, labels) => {
-                    log::debug!("Adding labels for location {:?}", location.to_numerical());
                     self.text_state.add_labels(location, labels);
-                    log::debug!("Added labels for location {:?}", location.to_numerical());
                     changed = true;
                 }
             }
@@ -625,25 +587,14 @@ impl State {
                                     .send(Message::PeakLabelsPrepared(location, labels))
                                     .ok();
                             };
-
-                            #[cfg(not(target_arch = "wasm32"))]
-                            {
-                                tokio::task::spawn_blocking(prepare_peak_labels);
-                            }
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                prepare_peak_labels();
-                            }
+                            tokio::task::spawn_blocking(prepare_peak_labels);
                         }
                     } else {
                         ADDITIONAL_FONTS_LOADED.with_borrow_mut(|loaded| *loaded = true);
                     };
                 };
 
-                #[cfg(not(target_arch = "wasm32"))]
                 tokio::spawn(future);
-                #[cfg(target_arch = "wasm32")]
-                wasm_bindgen_futures::spawn_local(future);
             }
         }
     }
@@ -698,13 +649,13 @@ impl State {
         }
 
         for location in to_unload.into_iter() {
-            log::info!("Unloading {location:#?}");
             self.text_state.remove_labels(location);
             self.peaks.remove(&location);
             self.render_environment.unload_terrain(location);
         }
 
         for to_fetch in new_locations.into_iter() {
+            log::info!("Queueing terrain");
             self.sender.send(Message::TerrainQueued(to_fetch)).unwrap();
         }
     }

@@ -1,5 +1,4 @@
 use geotiff::GeoTiff;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{buffer::Buffer, data::Vertex, geometry::transform};
 
@@ -145,7 +144,6 @@ impl RenderBuffer {
         let geotiff_min = geotiff.model_extent().min();
 
         let mut vertices = (0..raster_width)
-            .into_par_iter()
             .flat_map(|row| {
                 (0..raster_height)
                     .into_iter()

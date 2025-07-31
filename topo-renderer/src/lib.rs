@@ -5,6 +5,7 @@ pub mod render;
 
 use render::state::{State, StateEvent};
 use std::{cell::RefCell, sync::Arc};
+use tokio_with_wasm::alias as tokio;
 use topo_common::GeoCoord;
 use wasm_bindgen::prelude::*;
 use winit::{
@@ -61,7 +62,7 @@ impl ApplicationHandler<UserEvent> for Application {
         #[cfg(target_arch = "wasm32")]
         {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init().expect("could not initialize logger");
+            console_log::init_with_level(log::Level::Info).expect("could not initialize logger");
 
             use wasm_bindgen::JsCast;
             use winit::platform::web::WindowAttributesExtWebSys;
@@ -86,9 +87,13 @@ impl ApplicationHandler<UserEvent> for Application {
         {
             env_logger::init();
 
-            let state = futures::executor::block_on(async move {
+            let mut state = futures::executor::block_on(async move {
                 State::new(window, event_loop_proxy, settings).await
             });
+            // While there's no desktop gui, initialize to some location
+            log::info!("Setting  coord_0");
+            state.set_coord_0(GeoCoord::new(49.35135, 20.21139));
+            log::info!("Set coord_0");
 
             self.state = Some(state);
         }
@@ -241,8 +246,8 @@ pub fn load_fonts() {
     }
 }
 
-#[wasm_bindgen(start)]
-pub fn start() {
+#[tokio::main]
+pub async fn async_main() {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
     let event_loop_proxy = event_loop.create_proxy();
 
@@ -264,4 +269,9 @@ pub fn start() {
             settings,
         })
         .unwrap();
+}
+
+#[wasm_bindgen(start)]
+pub fn start() {
+    async_main();
 }

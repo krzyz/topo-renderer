@@ -17,6 +17,7 @@ use winit::{
 
 thread_local! {
     pub static EVENT_LOOP_PROXY: RefCell<Option<EventLoopProxy<UserEvent>>> = RefCell::new(None);
+    pub static ADDITIONAL_FONTS_LOADED: RefCell<bool> = RefCell::new(false);
 }
 
 #[derive(Debug)]
@@ -219,6 +220,25 @@ pub fn set_location(latitude: f32, longitude: f32) {
                 .unwrap();
         }
     })
+}
+
+#[wasm_bindgen]
+pub fn load_fonts() {
+    let mut loaded_before = false;
+    ADDITIONAL_FONTS_LOADED.with_borrow_mut(|loaded| {
+        loaded_before = *loaded;
+        *loaded = true
+    });
+
+    if !loaded_before {
+        EVENT_LOOP_PROXY.with_borrow_mut(|proxy| {
+            if let Some(proxy) = proxy {
+                proxy
+                    .send_event(UserEvent::StateEvent(StateEvent::LoadAdditionalFonts))
+                    .unwrap();
+            }
+        })
+    }
 }
 
 #[wasm_bindgen(start)]

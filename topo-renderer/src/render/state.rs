@@ -2,7 +2,7 @@ use crate::common::data::{Size, pad_256};
 use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
 use crate::render::pipeline::Pipeline;
-use crate::{ApplicationSettings, UserEvent};
+use crate::{ADDITIONAL_FONTS_LOADED, ApplicationSettings, UserEvent};
 
 use super::camera::Camera;
 use super::camera_controller::CameraController;
@@ -45,6 +45,7 @@ pub struct DepthState {
 pub enum StateEvent {
     FrameFinished(DepthState),
     ChangeLocation(GeoCoord),
+    LoadAdditionalFonts,
 }
 
 pub enum Message {
@@ -610,6 +611,39 @@ impl State {
             }
             StateEvent::ChangeLocation(coord) => {
                 self.set_coord_0(coord);
+            }
+            StateEvent::LoadAdditionalFonts => {
+                let peaks_map = self.peaks.clone();
+                let sender = self.sender.clone();
+                let future = async move {
+                    if TextState::load_additional_fonts().await.is_ok() {
+                        for (location, peaks) in peaks_map {
+                            let sender = sender.clone();
+                            let prepare_peak_labels = move || {
+                                let labels = TextState::prepare_peak_labels(&peaks);
+                                sender
+                                    .send(Message::PeakLabelsPrepared(location, labels))
+                                    .ok();
+                            };
+
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                tokio::task::spawn_blocking(prepare_peak_labels);
+                            }
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                prepare_peak_labels();
+                            }
+                        }
+                    } else {
+                        ADDITIONAL_FONTS_LOADED.with_borrow_mut(|loaded| *loaded = true);
+                    };
+                };
+
+                #[cfg(not(target_arch = "wasm32"))]
+                tokio::spawn(future);
+                #[cfg(target_arch = "wasm32")]
+                wasm_bindgen_futures::spawn_local(future);
             }
         }
     }

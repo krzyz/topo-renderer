@@ -1,4 +1,5 @@
 use super::state::PeakInstance;
+use color_eyre::eyre::Result;
 use glyphon::fontdb::{Database, Source};
 use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Shaping, SwashCache, TextArea, TextAtlas,
@@ -8,7 +9,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, RwLock};
 use topo_common::GeoLocation;
 use wgpu::MultisampleState;
 
@@ -17,11 +18,16 @@ pub const LINE_PADDING: f32 = 4.0;
 pub const LABEL_PADDING_LEFT: f32 = 1.0;
 pub const MAX_ROWS: usize = 8;
 
+static FONTS: LazyLock<RwLock<Vec<Source>>> = LazyLock::new(|| RwLock::new(vec![]));
+
+// each thread gets its own font system so background tasks/threads can
+// each provide &mut font system for glyphon methods
 thread_local! {
     pub static FONT_SYSTEM: RefCell<FontSystem> = {
         let font_source = Source::Binary(Arc::new(include_bytes!(
             "../../../resources/Roboto-Regular.ttf"
         )));
+
         let mut font_db = Database::new();
         font_db.load_font_source(font_source);
 
@@ -124,9 +130,44 @@ impl TextState {
         self.labels.insert(location, labels);
     }
 
+    pub async fn load_additional_fonts() -> Result<()> {
+        let font_urls = [
+            "https://fonts.gstatic.com/s/notosansarabic/v29/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyvuw.ttf",
+            "https://fonts.gstatic.com/s/notosansjp/v54/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.ttf",
+            "https://fonts.gstatic.com/s/notosanskr/v37/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLQ.ttf",
+            "https://fonts.gstatic.com/s/notosanssc/v38/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYw.ttf",
+        ];
+
+        for url in font_urls {
+            let font = Source::Binary(Arc::new(reqwest::get(url).await?.bytes().await?));
+            let mut fonts = FONTS.write().unwrap();
+            fonts.push(font);
+        }
+
+        Ok(())
+    }
+
+    fn with_font_system<F, R>(f: F) -> R
+    where
+        F: FnOnce(&mut FontSystem) -> R,
+    {
+        {
+            let fonts = FONTS.read().unwrap();
+
+            FONT_SYSTEM.with_borrow_mut(|font_system| {
+                let db = font_system.db_mut();
+                // extend thread local font system with new fonts loaded globally
+                for i in (db.len() - 1)..fonts.len() {
+                    db.load_font_source(fonts[i].clone());
+                }
+            })
+        }
+        FONT_SYSTEM.with_borrow_mut(f)
+    }
+
     pub fn prepare_peak_labels(peaks: &Vec<PeakInstance>) -> Vec<Label> {
         let metric = Metrics::new(12.0, LINE_HEIGHT as f32);
-        FONT_SYSTEM.with_borrow_mut(|mut font_system| {
+        Self::with_font_system(|mut font_system| {
             peaks
                 .iter()
                 .map(|peak| {
@@ -187,7 +228,7 @@ impl TextState {
                 },
             )
             .collect::<Vec<_>>();
-        FONT_SYSTEM.with_borrow_mut(|mut font_system| {
+        Self::with_font_system(|mut font_system| {
             self.text_renderer
                 .prepare_with_depth(
                     device,

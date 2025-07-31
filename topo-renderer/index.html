@@ -41,9 +41,11 @@
       <input type="number" id="longitude" name="longitude" step="any" required/>
       <input type="submit" value="Go">
     </form>
+    <br />
+    <input id="additionalFonts" type="button" value="Load additional fonts" />
     <script type="module">
       import init from './pkg/topo_renderer.js';
-      import { set_location} from './pkg/topo_renderer.js';
+      import { set_location, load_fonts } from './pkg/topo_renderer.js';
 
       async function run() {
         await init();
@@ -55,6 +57,10 @@
 
         set_location(formData.get("latitude"), formData.get("longitude"));
       });
+
+      document.getElementById("additionalFonts").onclick = function () {
+        load_fonts();
+      };
 
       run();
     </script>

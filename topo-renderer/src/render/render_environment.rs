@@ -72,6 +72,10 @@ impl RenderEnvironment {
         &mut self.depth_read_buffer
     }
 
+    pub fn get_current_locations(&self) -> Vec<GeoLocation> {
+        self.render_buffers.keys().copied().collect()
+    }
+
     fn create_texture_view(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -175,6 +179,10 @@ impl RenderEnvironment {
         render_buffer.add_terrain(device, queue, vertices, indices);
 
         self.render_buffers.insert(location, render_buffer);
+    }
+
+    pub fn unload_terrain(&mut self, location: GeoLocation) {
+        self.render_buffers.remove(&location);
     }
 
     pub fn render<'a>(

@@ -130,6 +130,10 @@ impl TextState {
         self.labels.insert(location, labels);
     }
 
+    pub fn remove_labels(&mut self, location: GeoLocation) {
+        self.labels.remove(&location);
+    }
+
     pub async fn load_additional_fonts() -> Result<()> {
         let font_urls = [
             "https://fonts.gstatic.com/s/notosansarabic/v29/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyvuw.ttf",

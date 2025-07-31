@@ -18,7 +18,7 @@ use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
 use log::debug;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -678,11 +678,35 @@ impl State {
 
     pub fn set_coord_0(&mut self, location: GeoCoord) {
         self.coord_0 = Some(location);
-        Self::get_locations_range(location, 100_000.0)
+        let current_locations: HashSet<_> = self
+            .render_environment
+            .get_current_locations()
             .into_iter()
-            .for_each(|to_fetch| {
-                self.sender.send(Message::TerrainQueued(to_fetch)).unwrap();
-            });
+            .collect();
+        let mut new_locations: HashSet<_> = Self::get_locations_range(location, 100_000.0)
+            .into_iter()
+            .collect();
+        let mut to_unload = vec![];
+
+        for location in current_locations {
+            let is_current_in_new = new_locations.contains(&location);
+            if is_current_in_new {
+                new_locations.remove(&location);
+            } else {
+                to_unload.push(location);
+            }
+        }
+
+        for location in to_unload.into_iter() {
+            log::info!("Unloading {location:#?}");
+            self.text_state.remove_labels(location);
+            self.peaks.remove(&location);
+            self.render_environment.unload_terrain(location);
+        }
+
+        for to_fetch in new_locations.into_iter() {
+            self.sender.send(Message::TerrainQueued(to_fetch)).unwrap();
+        }
     }
 
     fn get_locations_range(location: GeoCoord, range_dist: f32) -> Vec<GeoLocation> {

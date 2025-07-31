@@ -30,15 +30,31 @@
     </style>
 </head>
   <body>
+
     <div class="root">
       <canvas class="main-canvas" id="canvas"></canvas>
     </div>
+    <form id="locationSelect">
+      <label for="latitude">Latitude:</label>
+      <input type="number" id="latitude" name="latitude" step="any" required/>
+      <label for="longitude">Longitude:</label>
+      <input type="number" id="longitude" name="longitude" step="any" required/>
+      <input type="submit" value="Go">
+    </form>
     <script type="module">
       import init from './pkg/topo_renderer.js';
+      import { set_location} from './pkg/topo_renderer.js';
 
       async function run() {
         await init();
       }
+
+      document.getElementById("locationSelect").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var formData = new FormData(e.target);
+
+        set_location(formData.get("latitude"), formData.get("longitude"));
+      });
 
       run();
     </script>

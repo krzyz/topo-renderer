@@ -4,7 +4,7 @@ pub mod common;
 pub mod render;
 
 use render::state::{State, StateEvent};
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 use topo_common::GeoCoord;
 use wasm_bindgen::prelude::*;
 use winit::{
@@ -14,6 +14,10 @@ use winit::{
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     window::{Window, WindowId},
 };
+
+thread_local! {
+    pub static EVENT_LOOP_PROXY: RefCell<Option<EventLoopProxy<UserEvent>>> = RefCell::new(None);
+}
 
 #[derive(Debug)]
 pub enum UserEvent {
@@ -81,12 +85,9 @@ impl ApplicationHandler<UserEvent> for Application {
         {
             env_logger::init();
 
-            let mut state = futures::executor::block_on(async move {
+            let state = futures::executor::block_on(async move {
                 State::new(window, event_loop_proxy, settings).await
             });
-
-            let coord_0 = GeoCoord::new(49.36991, 20.13715);
-            state.set_coord_0(coord_0);
 
             self.state = Some(state);
         }
@@ -115,8 +116,6 @@ impl ApplicationHandler<UserEvent> for Application {
                 match receiver.try_recv() {
                     Ok(Some(mut state)) => {
                         log::debug!("Received new state");
-                        let coord_0 = GeoCoord::new(49.36991, 20.13715);
-                        state.set_coord_0(coord_0);
                         state.window().request_redraw();
                         if let Some(physical_size) = self.resized.take() {
                             self.surface_configured = true;
@@ -209,10 +208,27 @@ impl ApplicationHandler<UserEvent> for Application {
     }
 }
 
+#[wasm_bindgen]
+pub fn set_location(latitude: f32, longitude: f32) {
+    EVENT_LOOP_PROXY.with_borrow_mut(|proxy| {
+        if let Some(proxy) = proxy {
+            proxy
+                .send_event(UserEvent::StateEvent(StateEvent::ChangeLocation(
+                    GeoCoord::new(latitude, longitude),
+                )))
+                .unwrap();
+        }
+    })
+}
+
 #[wasm_bindgen(start)]
 pub fn start() {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
     let event_loop_proxy = event_loop.create_proxy();
+
+    EVENT_LOOP_PROXY.with_borrow_mut(|proxy| {
+        *proxy = Some(event_loop_proxy.clone());
+    });
 
     let settings = ApplicationSettings {
         backend_url: env!("TOPO_backend_url").to_string(),

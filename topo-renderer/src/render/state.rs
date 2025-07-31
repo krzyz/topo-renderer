@@ -44,6 +44,7 @@ pub struct DepthState {
 #[derive(Debug)]
 pub enum StateEvent {
     FrameFinished(DepthState),
+    ChangeLocation(GeoCoord),
 }
 
 pub enum Message {
@@ -606,6 +607,9 @@ impl State {
                 self.render_environment
                     .get_depth_read_buffer_mut()
                     .map(self.sender.clone(), new_depth_state);
+            }
+            StateEvent::ChangeLocation(coord) => {
+                self.set_coord_0(coord);
             }
         }
     }

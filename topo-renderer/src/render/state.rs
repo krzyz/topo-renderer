@@ -11,12 +11,14 @@ use super::geometry::R0;
 use super::lines::LineRenderer;
 use super::render_buffer::RenderBuffer;
 use super::render_environment::RenderEnvironment;
+use super::status::{PendingOperation, StatusNotifier};
 use super::text::{Label, LabelId, TextState};
 use bytes::{Buf, Bytes};
 use color_eyre::Result;
 use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 use std::io::Cursor;
 use std::sync::Arc;
@@ -25,6 +27,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 use tokio_with_wasm::alias as tokio;
 use topo_common::{GeoCoord, GeoLocation};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 use wgpu::{TexelCopyBufferInfo, TexelCopyBufferLayout};
@@ -116,6 +120,7 @@ pub struct State {
     depth_state: Option<DepthState>,
     settings: ApplicationSettings,
     coord_0: Option<GeoCoord>,
+    status_notifier: StatusNotifier,
 }
 
 impl std::fmt::Debug for State {
@@ -210,6 +215,31 @@ impl State {
         let mut line_renderer = LineRenderer::new(&device, format);
         line_renderer.prepare(&device, &queue, vec![]);
 
+        #[cfg(not(target_arch = "wasm32"))]
+        let status_notifier = StatusNotifier::new();
+        #[cfg(target_arch = "wasm32")]
+        let mut status_notifier = StatusNotifier::new();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let notify_span = RefCell::new(
+                web_sys::window()
+                    .unwrap()
+                    .document()
+                    .unwrap()
+                    .get_element_by_id("status")
+                    .unwrap()
+                    .dyn_into::<web_sys::HtmlSpanElement>()
+                    .unwrap(),
+            );
+
+            let func = move |text: &str| {
+                notify_span.borrow_mut().set_inner_text(text);
+            };
+
+            status_notifier.add_listener(Box::new(func));
+        }
+
         Self {
             event_loop_proxy,
             surface,
@@ -233,6 +263,7 @@ impl State {
             depth_state: None,
             settings,
             coord_0: None,
+            status_notifier,
         }
     }
 
@@ -381,11 +412,9 @@ impl State {
                     self.render_environment.get_depth_read_buffer_mut().unmap();
                 }
                 Message::TerrainQueued(location) => {
-                    log::info!("Terrain queued, fetching data");
                     let backend_url = self.settings.backend_url.clone();
                     let sender = self.sender.clone();
                     let future = async move {
-                        log::info!("Running future");
                         let (gtiff, peaks) =
                             Self::fetch_dem_data(&backend_url, location).await.unwrap();
 
@@ -395,6 +424,12 @@ impl State {
                     };
 
                     tokio::spawn(future);
+
+                    self.status_notifier.update_pending_operations(
+                        Some(location),
+                        &[PendingOperation::FetchingTerrain],
+                        &[],
+                    );
                 }
                 Message::TerrainReceived((location, gtiff, peaks)) => {
                     self.uniforms = Uniforms::new(&self.camera, bounds);
@@ -431,8 +466,23 @@ impl State {
 
                     tokio::task::spawn_blocking(process_terrain);
                     tokio::task::spawn_blocking(prepare_peak_labels);
+
+                    self.status_notifier.update_pending_operations(
+                        Some(location),
+                        &[
+                            PendingOperation::ProcessingTerrain,
+                            PendingOperation::PreparingLabels,
+                        ],
+                        &[PendingOperation::FetchingTerrain],
+                    );
                 }
                 Message::TerrainProcessed(location, vertices, indices) => {
+                    self.status_notifier.update_pending_operations(
+                        Some(location),
+                        &[PendingOperation::WritingTerrain],
+                        &[PendingOperation::ProcessingTerrain],
+                    );
+
                     self.render_environment.add_terrain(
                         &self.device,
                         &self.queue,
@@ -441,10 +491,22 @@ impl State {
                         &indices,
                     );
 
+                    self.status_notifier.update_pending_operations(
+                        Some(location),
+                        &[],
+                        &[PendingOperation::WritingTerrain],
+                    );
                     changed = true;
                 }
                 Message::PeakLabelsPrepared(location, labels) => {
                     self.text_state.add_labels(location, labels);
+
+                    self.status_notifier.update_pending_operations(
+                        Some(location),
+                        &[],
+                        &[PendingOperation::PreparingLabels],
+                    );
+
                     changed = true;
                 }
             }
@@ -655,7 +717,6 @@ impl State {
         }
 
         for to_fetch in new_locations.into_iter() {
-            log::info!("Queueing terrain");
             self.sender.send(Message::TerrainQueued(to_fetch)).unwrap();
         }
     }

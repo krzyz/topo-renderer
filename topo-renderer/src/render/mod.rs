@@ -10,5 +10,6 @@ pub mod pipeline;
 pub mod render_buffer;
 pub mod render_environment;
 pub mod state;
+pub mod status;
 pub mod text;
 pub mod texture;

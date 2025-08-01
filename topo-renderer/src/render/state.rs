@@ -15,9 +15,13 @@ use super::status::{PendingOperation, StatusNotifier};
 use super::text::{Label, LabelId, TextState};
 use bytes::{Buf, Bytes};
 use color_eyre::Result;
+#[cfg(target_arch = "wasm32")]
+use color_eyre::eyre::eyre;
+use color_eyre::eyre::{Error, OptionExt};
 use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
+#[cfg(target_arch = "wasm32")]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 use std::io::Cursor;
@@ -134,7 +138,7 @@ impl State {
         window: Arc<Window>,
         event_loop_proxy: EventLoopProxy<UserEvent>,
         settings: ApplicationSettings,
-    ) -> State {
+    ) -> Result<State> {
         let (sender, receiver) = channel();
         let size = window.inner_size();
         // let scale_factor = window.scale_factor();
@@ -148,15 +152,14 @@ impl State {
             backends: wgpu::Backends::BROWSER_WEBGPU,
             ..Default::default()
         });
-        let surface = instance.create_surface(window.clone()).unwrap();
+        let surface = instance.create_surface(window.clone())?;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
-            .await
-            .unwrap();
+            .await?;
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
@@ -165,8 +168,7 @@ impl State {
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
             })
-            .await
-            .unwrap();
+            .await?;
 
         let surface_caps = surface.get_capabilities(&adapter);
         // Shader code in this tutorial assumes an Srgb surface texture. Using a different
@@ -222,25 +224,31 @@ impl State {
 
         #[cfg(target_arch = "wasm32")]
         {
-            let notify_span = RefCell::new(
-                web_sys::window()
-                    .unwrap()
+            match try {
+                wgpu::web_sys::window()
+                    .ok_or_eyre("Unable to get window")?
                     .document()
-                    .unwrap()
+                    .ok_or_eyre("Unable to get document")?
                     .get_element_by_id("status")
-                    .unwrap()
-                    .dyn_into::<web_sys::HtmlSpanElement>()
-                    .unwrap(),
-            );
+                    .ok_or_eyre("Unable to get canvas by id \"canvas\"")?
+                    .dyn_into::<wgpu::web_sys::HtmlSpanElement>()
+                    .map_err(|_| eyre!("Unable to convert canvas to HtmlCanvasElement"))?
+            } {
+                Ok::<_, Error>(notify_span) => {
+                    let notify_span = RefCell::new(notify_span);
+                    let func = move |text: &str| {
+                        notify_span.borrow_mut().set_inner_text(text);
+                    };
 
-            let func = move |text: &str| {
-                notify_span.borrow_mut().set_inner_text(text);
-            };
-
-            status_notifier.add_listener(Box::new(func));
+                    status_notifier.add_listener(Box::new(func));
+                }
+                Err(err) => {
+                    log::debug!("{err}")
+                }
+            }
         }
 
-        Self {
+        Ok(Self {
             event_loop_proxy,
             surface,
             device,
@@ -264,7 +272,7 @@ impl State {
             settings,
             coord_0: None,
             status_notifier,
-        }
+        })
     }
 
     pub fn window(&self) -> &Window {
@@ -320,12 +328,10 @@ impl State {
         }
     }
 
-    pub fn update(&mut self) -> bool {
+    pub fn update(&mut self) -> Result<bool> {
         let mut changed = false;
 
-        self.device
-            .poll(wgpu::PollType::Poll)
-            .expect("Error polling");
+        self.device.poll(wgpu::PollType::Poll)?;
 
         let bounds = (self.size.width as f32, self.size.height as f32).into();
 
@@ -415,12 +421,11 @@ impl State {
                     let backend_url = self.settings.backend_url.clone();
                     let sender = self.sender.clone();
                     let future = async move {
-                        let (gtiff, peaks) =
-                            Self::fetch_dem_data(&backend_url, location).await.unwrap();
+                        let (gtiff, peaks) = Self::fetch_dem_data(&backend_url, location).await?;
 
-                        sender
-                            .send(Message::TerrainReceived((location, gtiff, peaks)))
-                            .unwrap();
+                        sender.send(Message::TerrainReceived((location, gtiff, peaks)))?;
+
+                        Ok::<_, Error>(())
                     };
 
                     tokio::spawn(future);
@@ -440,7 +445,9 @@ impl State {
                         if GeoLocation::from(coord_0) == location {
                             let height: f32 = gtiff
                                 .get_value_at(&(<(f64, f64)>::from(coord_0)).into(), 0)
-                                .unwrap();
+                                .ok_or_eyre(
+                                    "Center coordinates not found in the expected geotiff chunk",
+                                )?;
 
                             self.camera.reset(coord_0, height + 10.0);
 
@@ -450,10 +457,10 @@ impl State {
 
                     let sender = self.sender.clone();
                     let process_terrain = move || {
-                        let (vertices, indices) = RenderBuffer::process_terrain(&gtiff);
-                        sender
-                            .send(Message::TerrainProcessed(location, vertices, indices))
-                            .ok();
+                        let (vertices, indices) = RenderBuffer::process_terrain(&gtiff)?;
+                        sender.send(Message::TerrainProcessed(location, vertices, indices))?;
+
+                        Ok::<_, Error>(())
                     };
 
                     let sender = self.sender.clone();
@@ -531,7 +538,7 @@ impl State {
             );
         }
 
-        changed
+        Ok(changed)
     }
 
     pub fn render(&mut self, changed: bool) -> std::result::Result<(), wgpu::SurfaceError> {
@@ -634,7 +641,7 @@ impl State {
                     .map(self.sender.clone(), new_depth_state);
             }
             StateEvent::ChangeLocation(coord) => {
-                self.set_coord_0(coord);
+                self.set_coord_0(coord).ok();
             }
             StateEvent::LoadAdditionalFonts => {
                 let peaks_map = self.peaks.clone();
@@ -671,7 +678,7 @@ impl State {
 
         let peak_bytes = get_peaks_from_http(backend_url, location).await?;
 
-        let peaks = Peak::read_peaks(peak_bytes.reader()).expect("Unable to read peak data");
+        let peaks = Peak::read_peaks(peak_bytes.reader())?;
 
         let peaks = peaks
             .into_iter()
@@ -689,7 +696,7 @@ impl State {
         Ok((geotiff, peaks))
     }
 
-    pub fn set_coord_0(&mut self, location: GeoCoord) {
+    pub fn set_coord_0(&mut self, location: GeoCoord) -> Result<()> {
         self.coord_0 = Some(location);
         let current_locations: HashSet<_> = self
             .render_environment
@@ -717,8 +724,10 @@ impl State {
         }
 
         for to_fetch in new_locations.into_iter() {
-            self.sender.send(Message::TerrainQueued(to_fetch)).unwrap();
+            self.sender.send(Message::TerrainQueued(to_fetch))?;
         }
+
+        Ok(())
     }
 
     fn get_locations_range(location: GeoCoord, range_dist: f32) -> Vec<GeoLocation> {

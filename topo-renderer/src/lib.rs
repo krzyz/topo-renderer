@@ -1,8 +1,12 @@
+#![feature(try_blocks)]
 extern crate approx;
 
 pub mod common;
 pub mod render;
 
+use color_eyre::eyre::Error;
+#[cfg(target_arch = "wasm32")]
+use color_eyre::eyre::{OptionExt, eyre};
 use render::state::{State, StateEvent};
 use std::{cell::RefCell, sync::Arc};
 use tokio_with_wasm::alias as tokio;
@@ -66,16 +70,24 @@ impl ApplicationHandler<UserEvent> for Application {
 
             use wasm_bindgen::JsCast;
             use winit::platform::web::WindowAttributesExtWebSys;
-            let canvas = wgpu::web_sys::window()
-                .unwrap()
-                .document()
-                .unwrap()
-                .get_element_by_id("canvas")
-                .unwrap()
-                .dyn_into::<wgpu::web_sys::HtmlCanvasElement>()
-                .unwrap();
-
-            window_attributes = Window::default_attributes().with_canvas(Some(canvas));
+            match try {
+                wgpu::web_sys::window()
+                    .ok_or_eyre("Unable to get window")?
+                    .document()
+                    .ok_or_eyre("Unable to get document")?
+                    .get_element_by_id("canvas")
+                    .ok_or_eyre("Unable to get canvas by id \"canvas\"")?
+                    .dyn_into::<wgpu::web_sys::HtmlCanvasElement>()
+                    .map_err(|_| eyre!("Unable to convert canvas to HtmlCanvasElement"))?
+            } {
+                Ok::<_, Error>(canvas) => {
+                    window_attributes = Window::default_attributes().with_canvas(Some(canvas));
+                }
+                Err(err) => {
+                    log::error!("{err}");
+                    window_attributes = Window::default_attributes();
+                }
+            }
         }
 
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
@@ -87,22 +99,34 @@ impl ApplicationHandler<UserEvent> for Application {
         {
             env_logger::init();
 
-            let mut state = futures::executor::block_on(async move {
-                State::new(window, event_loop_proxy, settings).await
-            });
-            // While there's no desktop gui, initialize to some location
-            log::info!("Setting  coord_0");
-            state.set_coord_0(GeoCoord::new(49.35135, 20.21139));
-            log::info!("Set coord_0");
+            match futures::executor::block_on(async move {
+                Ok::<_, Error>(State::new(window, event_loop_proxy, settings).await?)
+            }) {
+                Ok(mut state) => {
+                    // While there's no desktop gui, initialize to some location
+                    state.set_coord_0(GeoCoord::new(49.35135, 20.21139)).ok();
 
-            self.state = Some(state);
+                    self.state = Some(state);
+                }
+                Err(err) => {
+                    log::error!("{err}");
+                }
+            }
         }
         #[cfg(target_arch = "wasm32")]
         {
             let (sender, receiver) = futures::channel::oneshot::channel();
             let future = async move {
-                let state = State::new(window, event_loop_proxy, settings).await;
-                sender.send(state).unwrap();
+                match State::new(window, event_loop_proxy, settings).await {
+                    Ok(state) => {
+                        if let Err(_) = sender.send(state) {
+                            log::error!("Unable to send canvas state")
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("{err}");
+                    }
+                }
             };
             wasm_bindgen_futures::spawn_local(future);
             self.receiver = Some(receiver);
@@ -167,22 +191,30 @@ impl ApplicationHandler<UserEvent> for Application {
                     if !self.surface_configured {
                         return;
                     }
-                    let changed = state.update();
-                    match state.render(changed) {
-                        Ok(_) => {}
-                        // Reconfigure the surface if it's lost or outdated
-                        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                            state.resize(state.size())
-                        }
-                        // The system is out of memory, we should probably quit
-                        Err(wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other) => {
-                            log::error!("OutOfMemory");
-                            event_loop.exit()
-                        }
+                    match state.update() {
+                        Ok(changed) => {
+                            match state.render(changed) {
+                                Ok(_) => {}
+                                // Reconfigure the surface if it's lost or outdated
+                                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                                    state.resize(state.size())
+                                }
+                                // The system is out of memory, we should probably quit
+                                Err(
+                                    wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other,
+                                ) => {
+                                    log::error!("OutOfMemory");
+                                    event_loop.exit()
+                                }
 
-                        // This happens when the a frame takes too long to present
-                        Err(wgpu::SurfaceError::Timeout) => {
-                            log::warn!("Surface timeout")
+                                // This happens when the a frame takes too long to present
+                                Err(wgpu::SurfaceError::Timeout) => {
+                                    log::warn!("Surface timeout")
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            log::error!("{err}");
                         }
                     }
                 }

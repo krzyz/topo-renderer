@@ -1,3 +1,7 @@
+use color_eyre::{
+    Result,
+    eyre::{OptionExt, eyre},
+};
 use geotiff::GeoTiff;
 
 use super::{buffer::Buffer, data::Vertex, geometry::transform};
@@ -82,8 +86,14 @@ impl RenderBuffer {
         vertices: &Vec<Vertex>,
         raster_width: usize,
         raster_height: usize,
-    ) -> Vec<u32> {
-        vertices
+    ) -> Result<Vec<u32>> {
+        if vertices.len() != raster_width * raster_height {
+            return Err(eyre!(
+                "The length of produced vertices doesn't match the original raster width and height!"
+            ));
+        }
+
+        Ok(vertices
             .into_iter()
             .enumerate()
             .flat_map(|(i, vert)| {
@@ -128,12 +138,16 @@ impl RenderBuffer {
                 inds.into_iter()
             })
             .map(|i| i as u32)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
     }
 
-    pub fn process_terrain(geotiff: &GeoTiff) -> (Vec<Vertex>, Vec<u32>) {
+    pub fn process_terrain(geotiff: &GeoTiff) -> Result<(Vec<Vertex>, Vec<u32>)> {
         let raster_width = geotiff.raster_width;
         let raster_height = geotiff.raster_height;
+
+        if raster_width == 0 || raster_height == 0 {
+            return Err(eyre!("command failed"));
+        }
 
         let dx = (geotiff.model_extent().max().x - geotiff.model_extent().min().x)
             / (geotiff.raster_width as f64);
@@ -151,17 +165,21 @@ impl RenderBuffer {
                         let lambda = (0.5 + row as f64) * dx;
                         let phi = (0.5 + col as f64) * dy;
                         let coord = geotiff_min + (lambda, phi).into();
-                        let height = geotiff.get_value_at(&coord, 0).expect(&format!(
-                            "Unable to find value for {coord:#?} (row {row}, col {col}"
-                        ));
-                        let position = transform(height, coord.y as f32, coord.x as f32);
-                        Vertex::new(position, glam::Vec3::ZERO)
+                        geotiff
+                            .get_value_at(&coord, 0)
+                            .ok_or_eyre(format!(
+                                "Unable to find value for {coord:#?} (row {row}, col {col}"
+                            ))
+                            .map(|height| {
+                                let position = transform(height, coord.y as f32, coord.x as f32);
+                                Vertex::new(position, glam::Vec3::ZERO)
+                            })
                     })
                     .collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
 
-        let indices = Self::generate_indices(&vertices, raster_width, raster_height);
+        let indices = Self::generate_indices(&vertices, raster_width, raster_height)?;
 
         for chunk in indices.as_slice().chunks_exact(3) {
             //let [i0, _, i1, _, i2, _]: [u32; 6] = chunk.try_into().unwrap();
@@ -182,6 +200,6 @@ impl RenderBuffer {
             }
         }
 
-        (vertices, indices)
+        Ok((vertices, indices))
     }
 }

@@ -7,6 +7,7 @@ fn main() {
         .build()
         .unwrap();
 
+    println!("cargo:rerun-if-changed=../Settings.toml");
     println!(
         "cargo::rustc-env=TOPO_backend_url={}",
         settings.get_string("backend_url").unwrap()

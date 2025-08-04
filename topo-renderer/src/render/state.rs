@@ -18,6 +18,7 @@ use color_eyre::Result;
 #[cfg(target_arch = "wasm32")]
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::{Error, OptionExt};
+use futures::future::join_all;
 use geotiff::GeoTiff;
 use glam::Vec3;
 use itertools::Itertools;
@@ -62,6 +63,7 @@ pub enum Message {
     TerrainReceived((GeoLocation, GeoTiff, Vec<PeakInstance>)),
     TerrainProcessed(GeoLocation, Vec<Vertex>, Vec<u32>),
     PeakLabelsPrepared(GeoLocation, Vec<Label>),
+    AdditionalFontsLoaded,
 }
 
 #[derive(Clone)]
@@ -516,6 +518,14 @@ impl State {
 
                     changed = true;
                 }
+                Message::AdditionalFontsLoaded => {
+                    self.status_notifier.update_pending_operations(
+                        None,
+                        &[],
+                        &[PendingOperation::LoadingFonts],
+                    );
+                    changed = true;
+                }
             }
         }
 
@@ -647,23 +657,38 @@ impl State {
                 let peaks_map = self.peaks.clone();
                 let sender = self.sender.clone();
                 let future = async move {
-                    if TextState::load_additional_fonts().await.is_ok() {
-                        for (location, peaks) in peaks_map {
-                            let sender = sender.clone();
-                            let prepare_peak_labels = move || {
-                                let labels = TextState::prepare_peak_labels(&peaks);
-                                sender
-                                    .send(Message::PeakLabelsPrepared(location, labels))
-                                    .ok();
-                            };
-                            tokio::task::spawn_blocking(prepare_peak_labels);
+                    match TextState::load_additional_fonts().await {
+                        Ok(_) => {
+                            let label_preparation_futures =
+                                peaks_map.into_iter().map(|(location, peaks)| {
+                                    let sender = sender.clone();
+                                    let prepare_peak_labels = move || {
+                                        let labels = TextState::prepare_peak_labels(&peaks);
+                                        sender
+                                            .send(Message::PeakLabelsPrepared(location, labels))
+                                            .ok();
+                                    };
+                                    tokio::task::spawn_blocking(prepare_peak_labels)
+                                });
+
+                            join_all(label_preparation_futures).await;
+                            sender.send(Message::AdditionalFontsLoaded).ok();
                         }
-                    } else {
-                        ADDITIONAL_FONTS_LOADED.with_borrow_mut(|loaded| *loaded = true);
+                        Err(err) => {
+                            log::error!("{err}");
+                            sender.send(Message::AdditionalFontsLoaded).ok();
+                            ADDITIONAL_FONTS_LOADED.with_borrow_mut(|loaded| *loaded = false);
+                        }
                     };
                 };
 
                 tokio::spawn(future);
+
+                self.status_notifier.update_pending_operations(
+                    None,
+                    &[PendingOperation::LoadingFonts],
+                    &[],
+                );
             }
         }
     }

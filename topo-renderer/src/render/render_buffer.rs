@@ -109,16 +109,13 @@ impl RenderBuffer {
                     let br = i + 1;
                     let tl = i + raster_height;
                     let tr = i + raster_height + 1;
-                    let bl_height = vert.position.length();
-                    let br_height = vertices.get(br).unwrap().position.length();
-                    let tl_height = vertices.get(tl).unwrap().position.length();
-                    let tr_height = vertices.get(tr).unwrap().position.length();
-                    let bltr = (bl_height - tr_height).abs();
-                    let brtl = (br_height - tl_height).abs();
-                    if br_height.min(tl_height) > bl_height.max(tr_height)
-                        || bl_height.min(tr_height) < br_height.max(tl_height)
-                        || bltr > brtl
-                    {
+                    let bl_pos = vert.position;
+                    let br_pos = vertices.get(br).unwrap().position;
+                    let tl_pos = vertices.get(tl).unwrap().position;
+                    let tr_pos = vertices.get(tr).unwrap().position;
+                    let bltr = (bl_pos - tr_pos).length_squared();
+                    let brtl = (br_pos - tl_pos).length_squared();
+                    if bltr > brtl {
                         inds.push(br);
                         inds.push(bl);
                         inds.push(tl);
@@ -160,7 +157,6 @@ impl RenderBuffer {
         let mut vertices = (0..raster_width)
             .flat_map(|row| {
                 (0..raster_height)
-                    .into_iter()
                     .map(|col| {
                         let lambda = (0.5 + row as f64) * dx;
                         let phi = (0.5 + col as f64) * dy;

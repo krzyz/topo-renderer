@@ -60,7 +60,7 @@ pub enum StateEvent {
 pub enum Message {
     DepthBufferReady(DepthState),
     TerrainQueued(GeoLocation),
-    TerrainReceived((GeoLocation, GeoTiff, Vec<PeakInstance>)),
+    TerrainReceived((GeoLocation, Option<(GeoTiff, Vec<PeakInstance>)>)),
     TerrainProcessed(GeoLocation, Vec<Vertex>, Vec<u32>),
     PeakLabelsPrepared(GeoLocation, Vec<Label>),
     AdditionalFontsLoaded,
@@ -83,24 +83,35 @@ impl PeakInstance {
     }
 }
 
-async fn get_tiff_from_http(backend_url: &str, location: GeoLocation) -> Result<Bytes> {
-    Ok(reqwest::get(format!(
+async fn get_tiff_from_http(backend_url: &str, location: GeoLocation) -> Result<Option<Bytes>> {
+    let response = reqwest::get(format!(
         "{backend_url}/dem?{}",
         location.to_request_params()
     ))
     .await?
     .bytes()
-    .await?)
+    .await?;
+    if response.len() > 0 {
+        Ok(Some(response))
+    } else {
+        Ok(None)
+    }
 }
 
-async fn get_peaks_from_http(backend_url: &str, location: GeoLocation) -> Result<Bytes> {
-    Ok(reqwest::get(format!(
+async fn get_peaks_from_http(backend_url: &str, location: GeoLocation) -> Result<Option<Bytes>> {
+    let response = reqwest::get(format!(
         "{backend_url}/peaks?{}",
         location.to_request_params()
     ))
     .await?
     .bytes()
-    .await?)
+    .await?;
+
+    if response.len() > 0 {
+        Ok(Some(response))
+    } else {
+        Ok(None)
+    }
 }
 
 pub struct State {
@@ -423,9 +434,9 @@ impl State {
                     let backend_url = self.settings.backend_url.clone();
                     let sender = self.sender.clone();
                     let future = async move {
-                        let (gtiff, peaks) = Self::fetch_dem_data(&backend_url, location).await?;
+                        let data = Self::fetch_dem_data(&backend_url, location).await?;
 
-                        sender.send(Message::TerrainReceived((location, gtiff, peaks)))?;
+                        sender.send(Message::TerrainReceived((location, data)))?;
 
                         Ok::<_, Error>(())
                     };
@@ -438,52 +449,72 @@ impl State {
                         &[],
                     );
                 }
-                Message::TerrainReceived((location, gtiff, peaks)) => {
-                    self.uniforms = Uniforms::new(&self.camera, bounds);
+                Message::TerrainReceived((location, data)) => {
+                    if let Some((gtiff, peaks)) = data {
+                        self.peaks.insert(location, peaks.clone());
 
-                    self.peaks.insert(location, peaks.clone());
+                        if let Some(coord_0) = self.coord_0 {
+                            if GeoLocation::from(coord_0) == location {
+                                let height: f32 = gtiff
+                                    .get_value_at(&(<(f64, f64)>::from(coord_0)).into(), 0)
+                                    .ok_or_eyre(
+                                        "Center coordinates not found in the expected geotiff chunk",
+                                    )?;
 
-                    if let Some(coord_0) = self.coord_0 {
-                        if GeoLocation::from(coord_0) == location {
-                            let height: f32 = gtiff
-                                .get_value_at(&(<(f64, f64)>::from(coord_0)).into(), 0)
-                                .ok_or_eyre(
-                                    "Center coordinates not found in the expected geotiff chunk",
-                                )?;
+                                self.camera.reset(coord_0, height + 10.0);
 
-                            self.camera.reset(coord_0, height + 10.0);
-
-                            changed = true;
+                                changed = true;
+                            }
                         }
+
+                        self.uniforms = Uniforms::new(&self.camera, bounds);
+
+                        let sender = self.sender.clone();
+                        let process_terrain = move || {
+                            let (vertices, indices) = RenderBuffer::process_terrain(&gtiff)?;
+                            sender.send(Message::TerrainProcessed(location, vertices, indices))?;
+
+                            Ok::<_, Error>(())
+                        };
+
+                        let sender = self.sender.clone();
+                        let prepare_peak_labels = move || {
+                            let labels = TextState::prepare_peak_labels(&peaks);
+                            sender
+                                .send(Message::PeakLabelsPrepared(location, labels))
+                                .ok();
+                        };
+
+                        tokio::task::spawn_blocking(process_terrain);
+                        tokio::task::spawn_blocking(prepare_peak_labels);
+
+                        self.status_notifier.update_pending_operations(
+                            Some(location),
+                            &[
+                                PendingOperation::ProcessingTerrain,
+                                PendingOperation::PreparingLabels,
+                            ],
+                            &[PendingOperation::FetchingTerrain],
+                        );
+                    } else {
+                        self.peaks.insert(location, vec![]);
+
+                        if let Some(coord_0) = self.coord_0 {
+                            if GeoLocation::from(coord_0) == location {
+                                self.camera.reset(coord_0, 10.0);
+
+                                changed = true;
+                            }
+                        }
+                        let (vertices, indices) = RenderBuffer::process_empty_terrain(location)?;
+                        self.sender
+                            .send(Message::TerrainProcessed(location, vertices, indices))?;
+                        self.status_notifier.update_pending_operations(
+                            Some(location),
+                            &[],
+                            &[PendingOperation::FetchingTerrain],
+                        );
                     }
-
-                    let sender = self.sender.clone();
-                    let process_terrain = move || {
-                        let (vertices, indices) = RenderBuffer::process_terrain(&gtiff)?;
-                        sender.send(Message::TerrainProcessed(location, vertices, indices))?;
-
-                        Ok::<_, Error>(())
-                    };
-
-                    let sender = self.sender.clone();
-                    let prepare_peak_labels = move || {
-                        let labels = TextState::prepare_peak_labels(&peaks);
-                        sender
-                            .send(Message::PeakLabelsPrepared(location, labels))
-                            .ok();
-                    };
-
-                    tokio::task::spawn_blocking(process_terrain);
-                    tokio::task::spawn_blocking(prepare_peak_labels);
-
-                    self.status_notifier.update_pending_operations(
-                        Some(location),
-                        &[
-                            PendingOperation::ProcessingTerrain,
-                            PendingOperation::PreparingLabels,
-                        ],
-                        &[PendingOperation::FetchingTerrain],
-                    );
                 }
                 Message::TerrainProcessed(location, vertices, indices) => {
                     self.status_notifier.update_pending_operations(
@@ -696,29 +727,37 @@ impl State {
     async fn fetch_dem_data(
         backend_url: &str,
         location: GeoLocation,
-    ) -> Result<(GeoTiff, Vec<PeakInstance>)> {
-        let geotiff = GeoTiff::read(Cursor::new(
-            get_tiff_from_http(backend_url, location).await?.as_ref(),
-        ))?;
+    ) -> Result<Option<(GeoTiff, Vec<PeakInstance>)>> {
+        let geotiff = get_tiff_from_http(backend_url, location)
+            .await?
+            .map(|response| GeoTiff::read(Cursor::new(response)))
+            .transpose()?;
 
-        let peak_bytes = get_peaks_from_http(backend_url, location).await?;
+        let peaks = get_peaks_from_http(backend_url, location)
+            .await?
+            .map(|response| Peak::read_peaks(response.reader()))
+            .transpose()?;
 
-        let peaks = Peak::read_peaks(peak_bytes.reader())?;
-
-        let peaks = peaks
-            .into_iter()
-            .sorted_by(|a, b| {
-                PartialOrd::partial_cmp(&b.elevation, &a.elevation)
-                    .unwrap_or(std::cmp::Ordering::Less)
+        let peaks = geotiff.as_ref().and_then(|geotiff| {
+            peaks.map(|peaks| {
+                peaks
+                    .into_iter()
+                    .sorted_by(|a, b| {
+                        PartialOrd::partial_cmp(&b.elevation, &a.elevation)
+                            .unwrap_or(std::cmp::Ordering::Less)
+                    })
+                    .filter_map(|p| {
+                        geotiff
+                            .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
+                            .map(|h| {
+                                PeakInstance::new(transform(h, p.latitude, p.longitude), p.name)
+                            })
+                    })
+                    .collect::<Vec<_>>()
             })
-            .filter_map(|p| {
-                geotiff
-                    .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
-                    .map(|h| PeakInstance::new(transform(h, p.latitude, p.longitude), p.name))
-            })
-            .collect::<Vec<_>>();
+        });
 
-        Ok((geotiff, peaks))
+        Ok(geotiff.zip(peaks))
     }
 
     pub fn set_coord_0(&mut self, location: GeoCoord) -> Result<()> {
@@ -758,8 +797,8 @@ impl State {
     fn get_locations_range(location: GeoCoord, range_dist: f32) -> Vec<GeoLocation> {
         // TODO: handle projection edges (90NS/180EW deg)
         let center = (
-            location.latitude.floor() as i32,
-            location.longitude.floor() as i32,
+            (location.latitude.floor() as i32).min(-90).max(89),
+            ((location.longitude.floor() + 540.0) as i32) % 360 - 180,
         );
         let lat_cos = (location.latitude.to_radians()).cos();
         let arc_factor = 0.5 * range_dist / R0;
@@ -767,15 +806,15 @@ impl State {
         let afs_sq = arc_factor_sin * arc_factor_sin;
         let dlon = (1.0 - afs_sq / lat_cos / lat_cos).acos().to_degrees();
         let dlat = (1.0 - afs_sq).acos().to_degrees();
-        let lat_start = (location.latitude - dlat).floor() as i32;
-        let lat_end = (location.latitude + dlat).floor() as i32;
+        let lat_start = ((location.latitude - dlat).floor() as i32).max(-90);
+        let lat_end = ((location.latitude + dlat).floor() as i32).min(89);
         let lon_start = (location.longitude - dlon).floor() as i32;
         let lon_end = (location.longitude + dlon).floor() as i32;
 
         (lat_start..=lat_end)
             .cartesian_product(lon_start..=lon_end)
             .sorted_by_key(|(lat, lon)| ((lat - center.0).abs(), (lon - center.1).abs()))
-            .map(|(lat, lon)| GeoLocation::from_coord(lat, lon).into())
+            .map(|(lat, lon)| GeoLocation::from_coord(lat, (lon + 540) % 360 - 180).into())
             .collect()
     }
 }
@@ -795,6 +834,22 @@ mod tests {
             GeoLocation::from_coord(51, 20),
             GeoLocation::from_coord(51, 19),
             GeoLocation::from_coord(51, 21),
+        ];
+
+        assert_eq!(locations, expected);
+    }
+
+    #[test]
+    fn check_range_edge() {
+        let locations = State::get_locations_range(GeoCoord::new(29.0, -179.5), 100_000.0);
+
+        let expected = vec![
+            GeoLocation::from_coord(29, -180),
+            GeoLocation::from_coord(29, 179),
+            GeoLocation::from_coord(29, -179),
+            GeoLocation::from_coord(28, -180),
+            GeoLocation::from_coord(28, 179),
+            GeoLocation::from_coord(28, -179),
         ];
 
         assert_eq!(locations, expected);

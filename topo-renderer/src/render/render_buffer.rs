@@ -3,6 +3,7 @@ use color_eyre::{
     eyre::{OptionExt, eyre},
 };
 use geotiff::GeoTiff;
+use topo_common::GeoLocation;
 
 use super::{buffer::Buffer, data::Vertex, geometry::transform};
 
@@ -136,6 +137,21 @@ impl RenderBuffer {
             })
             .map(|i| i as u32)
             .collect::<Vec<_>>())
+    }
+
+    pub fn process_empty_terrain(location: GeoLocation) -> Result<(Vec<Vertex>, Vec<u32>)> {
+        let vertices = [(0, 0), (1, 0), (0, 1), (1, 1)]
+            .into_iter()
+            .map(|(i, j)| {
+                let coord = location.to_numerical();
+                let position = transform(0.0, coord.0 + i as f32, coord.1 + j as f32);
+                Vertex::new(position, position.normalize())
+            })
+            .collect();
+
+        let indices = Self::generate_indices(&vertices, 2, 2)?;
+
+        Ok((vertices, indices))
     }
 
     pub fn process_terrain(geotiff: &GeoTiff) -> Result<(Vec<Vertex>, Vec<u32>)> {

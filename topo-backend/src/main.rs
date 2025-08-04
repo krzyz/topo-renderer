@@ -46,13 +46,18 @@ async fn get_peaks(
         geo_location.longitude.degree.to_string()
     ));
 
-    log::info!("Opening file {}", file_name.display());
+    match File::open(file_name).await {
+        Ok(file) => {
+            let stream = ReaderStream::with_capacity(file, 256 * 1024);
+            let body = Body::from_stream(stream);
 
-    let file = File::open(file_name).await.expect("file missing");
-    let stream = ReaderStream::with_capacity(file, 256 * 1024);
-    let body = Body::from_stream(stream);
-
-    ([(header::CONTENT_TYPE, "text/csv")], body)
+            ([(header::CONTENT_TYPE, "text/csv")], body)
+        }
+        Err(_) => {
+            let body = Body::empty();
+            ([(header::CONTENT_TYPE, "text/html")], body)
+        }
+    }
 }
 
 async fn get_dem(
@@ -73,17 +78,24 @@ async fn get_dem(
         geo_location.longitude.degree
     ));
 
-    let file = File::open(file_name).await.expect("file missing");
-    let stream = ReaderStream::with_capacity(file, 10 * 1024 * 1024);
-    let body = Body::from_stream(stream);
+    match File::open(file_name).await {
+        Ok(file) => {
+            let stream = ReaderStream::with_capacity(file, 10 * 1024 * 1024);
+            let body = Body::from_stream(stream);
 
-    ([(header::CONTENT_TYPE, "image/tiff")], body)
+            ([(header::CONTENT_TYPE, "image/tiff")], body)
+        }
+        Err(_) => {
+            let body = Body::empty();
+            ([(header::CONTENT_TYPE, "text/html")], body)
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    log::info!("Log test");
+    log::info!("Starting api backend service");
 
     let cors = CorsLayer::new()
         .allow_methods([Method::GET])

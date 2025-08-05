@@ -9,11 +9,11 @@
         }
 
         body {
-            margin: 0px;
+            margin: 20px;
             background: #fff;
             font-family: "Calibri", "Arial", sans-serif;
-            width: 100%;
-            height: 100%;
+            display: flex;
+            justify-content: center;
         }
 
         .root {
@@ -27,23 +27,67 @@
             width: 100%;
             height: 100%;
         }
+
+        .additionalFonts {
+          width: 50px;
+        }
+
+        ul {
+          margin: 0px;
+        }
+
+        a {
+        }
+
+        a:link {
+          color: black;
+          text-decoration: underline;
+        }
+
+        a:visited {
+          color: black;
+          text-decoration: underline;
+        }
+
+        a:focus {
+          text-decoration: underline;
+        }
+
+        a:hover {
+          text-decoration: underline;
+        }
+
+        a:active {
+          text-decoration: underline;
+        }
     </style>
 </head>
   <body>
-
     <div class="root">
       <canvas class="main-canvas" id="canvas"></canvas>
+      <form id="locationSelect">
+        <label for="latitude">Latitude:</label>
+        <input type="number" id="latitude" name="latitude" step="any" required/>
+        <label for="longitude">Longitude:</label>
+        <input type="number" id="longitude" name="longitude" step="any" required/>
+        <input type="submit" value="Go">
+      </form>
+      <span id="status"></span>
+      <br />
+      <input id="additionalFonts" type="button" value="Load additional fonts" />
+      <p>
+      Use WASD or arrows to move forward/left/backward/right, shift/space for up/down, Q/E to zoom in/out, right click and move mouse to rotate the viewpoint, ctrl and move mouse to change the light direction. <br/>
+      Enter latitude+longitude (as numbers from -90 to 90 for S-N and -180 to 180 for W-E) and press "Go" (or enter). <br/>
+      Some peak labels might not render correctly, use "Load additional fonts" to fetch additional fonts (Arabic, Chinese, Japanese, Korean) from fonts.google.com<br/>
+      </p>
+      <p>
+      Data sources: 
+      <ul>
+        <li>Copernicus GLO-90 Digital Elevation Model via <a href="https://portal.opentopography.org/raster?opentopoID=OTSDEM.032021.4326.1">opentopography.org</a>, <a href="https://docs.sentinel-hub.com/api/latest/static/files/data/dem/resources/license/License-COPDEM-30.pdf">license</a></li>
+        <li>OpenStreetMap peaks data (via <a href="https://planet.openstreetmap.org/">https://planet.openstreetmap.org/</a>, date of access: 2025-04-28)</li>
+      </ul>
+      </p>
     </div>
-    <form id="locationSelect">
-      <label for="latitude">Latitude:</label>
-      <input type="number" id="latitude" name="latitude" step="any" required/>
-      <label for="longitude">Longitude:</label>
-      <input type="number" id="longitude" name="longitude" step="any" required/>
-      <input type="submit" value="Go">
-    </form>
-    <span id="status"></span>
-    <br />
-    <input id="additionalFonts" type="button" value="Load additional fonts" />
     <script type="module">
       import init from './pkg/topo_renderer.js';
       import { set_location, load_fonts } from './pkg/topo_renderer.js';

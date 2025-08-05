@@ -2,6 +2,13 @@
 
 A simple hobby project to display vistas/panorama from any place of the world using open source data and WebGPU rendering (via rust).
 
+# Live demo
+
+See at [https://topo.realcomplexity.com](https://topo.realcomplexity.com)
+
+Video (click to download):
+[![Video](https://raw.githubusercontent.com/krzyz/video_upload/main/topo.png)](https://raw.githubusercontent.com/krzyz/video_upload/main/topo.mp4)
+
 # Development
 
 To build/run, either install [just](https://just.systems/) and use commands from sections below or look up the actual commands from `justfile`.

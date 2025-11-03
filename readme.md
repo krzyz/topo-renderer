@@ -6,8 +6,7 @@ A simple hobby project to display vistas/panorama from any place of the world us
 
 See at [https://topo.realcomplexity.com](https://topo.realcomplexity.com)
 
-Video (click to download):
-[![Video](https://raw.githubusercontent.com/krzyz/video_upload/main/topo.png)](https://raw.githubusercontent.com/krzyz/video_upload/main/topo.mp4)
+![topo](https://github.com/user-attachments/assets/59c86d1d-6e3d-4249-b420-707fa7120f65)
 
 # Development
 

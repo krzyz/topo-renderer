@@ -43,6 +43,7 @@
             vulkan-loader
             vulkan-validation-layers
             wayland
+            #vscode-extensions.vadimcn.vscode-lldb
           ];
 
           packages = [
@@ -55,6 +56,7 @@
             trunk
             wgsl-analyzer
             just
+            lldb
           ]);
 
           RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
@@ -74,7 +76,7 @@
           WGPU_BACKEND = "vulkan";
 
           shellHook = ''
-            export PATH="$PATH:$HOME/.cargo/bin"
+            export PATH="$PATH:$HOME/.cargo/bin:$CODELLDB_PATH"
             exec nu
           '';
         };

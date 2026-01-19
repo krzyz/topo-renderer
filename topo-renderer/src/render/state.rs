@@ -180,6 +180,7 @@ impl State {
                 required_limits: wgpu::Limits::default(),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
+                experimental_features: Default::default(),
             })
             .await?;
 

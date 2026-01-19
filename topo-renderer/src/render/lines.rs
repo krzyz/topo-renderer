@@ -239,8 +239,8 @@ impl LineRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
             label: Some("line pipeline layout"),
+            immediate_size: 0,
         });
 
         let line_shader = device.create_shader_module(wgpu::include_wgsl!(concat!(
@@ -282,7 +282,7 @@ impl LineRenderer {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

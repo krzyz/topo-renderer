@@ -132,8 +132,8 @@ impl RenderEnvironment {
     }
 
     pub fn get_postprocessing_depth_stencil(
-        &self,
-    ) -> Option<wgpu::RenderPassDepthStencilAttachment> {
+        &'_ self,
+    ) -> Option<wgpu::RenderPassDepthStencilAttachment<'_>> {
         Some(wgpu::RenderPassDepthStencilAttachment {
             view: self.postprocessing_depth_texture_view.get_textures()[0].get_view(),
             depth_ops: Some(wgpu::Operations {
@@ -207,6 +207,7 @@ impl RenderEnvironment {
                             }),
                             store: wgpu::StoreOp::Store,
                         },
+                        depth_slice: None,
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: &self.texture_view.get_textures()[1].get_view(),
@@ -218,6 +219,7 @@ impl RenderEnvironment {
                     }),
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
 
                 render_pass.set_pipeline(self.first_pass_pipeline.get_pipeline());
@@ -248,10 +250,12 @@ impl RenderEnvironment {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
                         },
+                        depth_slice: None,
                     })],
                     depth_stencil_attachment: self.get_postprocessing_depth_stencil(),
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 }));
 
             postprocessing_pass.set_scissor_rect(0, 0, viewport.width, viewport.height);

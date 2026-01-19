@@ -78,7 +78,7 @@ impl Pipeline {
                     texture_bind_group_layout,
                     &postprocessing_uniform_bind_group_layout,
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let postprocessing_shader = device.create_shader_module(wgpu::include_wgsl!(concat!(
@@ -112,7 +112,7 @@ impl Pipeline {
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -159,7 +159,7 @@ impl Pipeline {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[&uniform_bind_group_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let render_shader = device.create_shader_module(wgpu::include_wgsl!(concat!(
@@ -209,7 +209,7 @@ impl Pipeline {
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

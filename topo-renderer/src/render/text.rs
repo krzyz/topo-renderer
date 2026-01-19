@@ -182,6 +182,7 @@ impl TextState {
                         peak.name.as_str(),
                         &Attrs::new().family(Family::SansSerif),
                         Shaping::Advanced,
+                        None,
                     );
                     buffer.shape_until_scroll(&mut font_system, false);
                     let width = buffer

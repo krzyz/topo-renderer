@@ -57,6 +57,9 @@
             wgsl-analyzer
             just
             lldb
+            superhtml
+            vscode-langservers-extracted
+            biome
           ]);
 
           RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";

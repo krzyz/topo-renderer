@@ -1,113 +1,294 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html>
   <head>
+    <title>"Topo renderer"</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
-    <style type="text/css">
-        canvas:focus {
-            outline: none;
-        }
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <style>
+    canvas:focus {
+      outline: none;
+    }
 
-        body {
-            margin: 20px;
-            background: #fff;
-            font-family: "Calibri", "Arial", sans-serif;
-            display: flex;
-            justify-content: center;
-        }
+    html body {
+      margin: 0px;
+      font-family: "Calibri", "Arial", sans-serif;
+      display: flex;
+      justify-content: center;
+      overflow: hidden;
+    }
 
-        .root {
-            width: 1600px; 
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        .main-canvas {
-            margin: 0;
-            width: 100%;
-            height: 100%;
-        }
+    .root {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
 
-        .additionalFonts {
-          width: 50px;
-        }
+    .main-menu {
+      position: absolute;
+      bottom: 0;
+      padding: 1em;
+    }
 
-        ul {
-          margin: 0px;
-        }
+    .main-menu:focus-within {
+      background-color: white;
+    }
 
-        a {
-        }
+    .main-menu > .expanded-menu {
+      display: none;
+      pointer-events: none;
+    }
 
-        a:link {
-          color: black;
-          text-decoration: underline;
-        }
+    .main-menu:focus-within > .expanded-menu {
+      display: block;
+      pointer-events: unset;
+    }
 
-        a:visited {
-          color: black;
-          text-decoration: underline;
-        }
+    .info {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      padding: 1em;
+    }
 
-        a:focus {
-          text-decoration: underline;
-        }
+    .info:focus-within {
+      background-color: white;
+    }
 
-        a:hover {
-          text-decoration: underline;
-        }
+    .info > .expanded-info {
+      display: none;
+      pointer-events: none;
+    }
 
-        a:active {
-          text-decoration: underline;
-        }
+    .info:focus-within > .expanded-info {
+      display: unset;
+      pointer-events: unset;
+    }
+
+    .info-button-container {
+      float: right;
+    }
+
+    .main-canvas {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+
+    .additionalFonts {
+      width: 50px;
+    }
+
+    menu {
+      padding-left: 0;
+      margin-top: 0;
+      margin-bottom: 0;
+      list-style-type: none;
+    }
+
+    li {
+      margin-top: 0.4em;
+      margin-bottom: 0.4em;
+      padding-top: 0.2em;
+      padding-bottom: 0.2em;
+    }
+
+    button {
+      font-size: 20px;
+    }
+
+    a:link {
+      color: black;
+      text-decoration: underline;
+    }
+
+    a:visited {
+      color: black;
+      text-decoration: underline;
+    }
+
+    a:focus {
+      text-decoration: underline;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    a:active {
+      text-decoration: underline;
+    }
+
+    #status {
+      display: none;
+    }
+
+    .status-bar {
+      position: absolute;
+      top: 0px;
+      height: 50px;
+    }
+
+    .status-bar:has(#status:empty) {
+      display: none;
+    }
+
+    @property --phase {
+      syntax: "<angle>";
+      inherits: false;
+      initial-value: 0deg;
+    }
+
+    .loader > span {
+      --phase: 0deg;
+      height: 40px;
+      width: 10px;
+      display: inline-grid;
+      background-color: black;
+      animation: load-anim 2s linear infinite;
+    }
+
+    .loader > span:nth-child(1) {
+      transform: scaleY(calc(cos(var(--phase))));
+    }
+
+    .loader > span:nth-child(2) {
+      transform: scaleY(calc(cos(var(--phase) + 30deg)));
+    }
+
+    .loader > span:nth-child(3) {
+      transform: scaleY(calc(cos(var(--phase) + 60deg)));
+    }
+
+    .loader > span:nth-child(4) {
+      transform: scaleY(calc(cos(var(--phase) + 90deg)));
+    }
+
+    .loader > span:nth-child(5) {
+      transform: scaleY(calc(cos(var(--phase) + 120deg)));
+    }
+
+    @keyframes load-anim {
+      to {
+        --phase: 360deg;
+      }
+    }
     </style>
-</head>
+  </head>
   <body>
     <div class="root">
       <canvas class="main-canvas" id="canvas"></canvas>
-      <form id="locationSelect">
-        <label for="latitude">Latitude:</label>
-        <input type="number" id="latitude" name="latitude" step="any" required/>
-        <label for="longitude">Longitude:</label>
-        <input type="number" id="longitude" name="longitude" step="any" required/>
-        <input type="submit" value="Go">
-      </form>
-      <span id="status"></span>
-      <br />
-      <input id="additionalFonts" type="button" value="Load additional fonts" />
-      <p>
-      Use WASD or arrows to move forward/left/backward/right, shift/space for up/down, Q/E to zoom in/out, right click and move mouse to rotate the viewpoint, ctrl and move mouse to change the light direction. <br/>
-      Enter latitude+longitude (as numbers from -90 to 90 for S-N and -180 to 180 for W-E) and press "Go" (or enter). <br/>
-      Some peak labels might not render correctly, use "Load additional fonts" to fetch additional fonts (Arabic, Chinese, Japanese, Korean) from fonts.google.com<br/>
-      </p>
-      <p>
-      Data sources: 
-      <ul>
-        <li>Copernicus GLO-90 Digital Elevation Model via <a href="https://portal.opentopography.org/raster?opentopoID=OTSDEM.032021.4326.1">opentopography.org</a>, <a href="https://docs.sentinel-hub.com/api/latest/static/files/data/dem/resources/license/License-COPDEM-30.pdf">license</a></li>
-        <li>OpenStreetMap peaks data (via <a href="https://planet.openstreetmap.org/">https://planet.openstreetmap.org/</a>, date of access: 2025-04-28)</li>
-      </ul>
-      </p>
+      <div class="info">
+        <div class="expanded-info">
+          Use WASD or arrows to move forward/left/backward/right, shift/space
+          for up/down, Q/E to zoom in/out, right click and move mouse to rotate
+          the viewpoint, ctrl and move mouse to change the light direction. <br>
+          Enter latitude+longitude (as numbers from -90 to 90 for S-N and -180
+          to 180 for W-E) and press "Go" (or enter). <br>
+          Some peak labels might not render correctly, use "Load additional
+          fonts" to fetch additional fonts (Arabic, Chinese, Japanese, Korean)
+          from fonts.google.com
+          <br>
+          <br>
+          <strong>Data sources:</strong>
+          <ul>
+            <li>
+              Copernicus GLO-90 Digital Elevation Model via
+              <a
+                href="https://portal.opentopography.org/raster?opentopoID=OTSDEM.032021.4326.1"
+                >opentopography.org</a
+              >,<a
+                href="https://docs.sentinel-hub.com/api/latest/static/files/data/dem/resources/license/License-COPDEM-30.pdf"
+                >license</a
+              >
+            </li>
+            <li>
+              OpenStreetMap peaks data (via
+              <a href="https://planet.openstreetmap.org/"
+                >https://planet.openstreetmap.org/</a
+              >, date of access: 2025-04-28)
+            </li>
+          </ul>
+        </div>
+        <div class="info-button-container">
+          <button>info</button>
+        </div>
+      </div>
+      <div class="main-menu">
+        <div class="expanded-menu">
+          <h2>Topo renderer</h2>
+          <menu class="expanded-menu">
+            <li>
+              <form id="locationSelect">
+                <label for="latitude">Latitude:</label>
+                <input
+                  type="number"
+                  id="latitude"
+                  name="latitude"
+                  step="any"
+                  required
+                >
+                <label for="longitude">Longitude:</label>
+                <input
+                  type="number"
+                  id="longitude"
+                  name="longitude"
+                  step="any"
+                  required
+                >
+                <input type="submit" value="Go">
+              </form>
+            </li>
+            <li>
+              <input
+                id="additionalFonts"
+                type="button"
+                value="Load additional fonts"
+              >
+            </li>
+          </menu>
+        </div>
+        <button>menu</button>
+      </div>
+      <div class="status-bar">
+        <!--<div class="loader"></div>-->
+        <div class="loader">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span id="status"></span>
+      </div>
     </div>
     <script type="module">
-      import init from './pkg/topo_renderer.js';
-      import { set_location, load_fonts } from './pkg/topo_renderer.js';
+    import init from "./pkg/topo_renderer.js";
+    import { set_location, load_fonts } from "./pkg/topo_renderer.js";
 
-      async function run() {
-        await init();
-      }
+    async function run() {
+      await init();
+    }
 
-      document.getElementById("locationSelect").addEventListener("submit", function (e) {
+    document
+      .getElementById("locationSelect")
+      .addEventListener("submit", function (e) {
         e.preventDefault();
         var formData = new FormData(e.target);
 
         set_location(formData.get("latitude"), formData.get("longitude"));
       });
 
-      document.getElementById("additionalFonts").onclick = function () {
-        load_fonts();
-      };
+    document.getElementById("additionalFonts").onclick = function () {
+      load_fonts();
+    };
 
-      run();
+    run();
     </script>
   </body>
 </html>

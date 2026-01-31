@@ -1,4 +1,5 @@
 use crate::common::data::{Size, pad_256};
+use crate::render::camera::dist_from_depth;
 use crate::render::geometry::transform;
 use crate::render::peaks::Peak;
 use crate::render::pipeline::Pipeline;
@@ -379,6 +380,7 @@ impl State {
                                             && projected_point.x < 1.0
                                             && projected_point.y > -1.0
                                             && projected_point.y < 1.0
+                                            && projected_point.z < 1.0
                                         {
                                             let (x_pos, y_pos) = (
                                                 (0.5 * (projected_point.x + 1.0)
@@ -399,7 +401,9 @@ impl State {
                                                 .expect("Failed depth buffer lookup")
                                                 .get_f32_le();
 
-                                            if projected_point.z < 1.000001 * depth_value {
+                                            let terrain_distance = dist_from_depth(depth_value);
+                                            let peak_distance = dist_from_depth(projected_point.z);
+                                            if peak_distance - 10.0 < terrain_distance {
                                                 peak.visible = true;
                                                 (i, peak, Some((x_pos, y_pos)))
                                             } else {
@@ -750,8 +754,11 @@ impl State {
                     .filter_map(|p| {
                         geotiff
                             .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
-                            .map(|h| {
-                                PeakInstance::new(transform(h, p.latitude, p.longitude), p.name)
+                            .map(|h: f32| {
+                                PeakInstance::new(
+                                    transform(h + 10.0, p.latitude, p.longitude),
+                                    p.name,
+                                )
                             })
                     })
                     .collect::<Vec<_>>()

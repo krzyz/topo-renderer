@@ -3,6 +3,12 @@ use std::f32::consts::PI;
 use topo_common::GeoCoord;
 
 use super::geometry::transform;
+pub const NEAR: f32 = 50.0;
+pub const FAR: f32 = 500000.0;
+
+pub fn dist_from_depth(depth: f32) -> f32 {
+    FAR * NEAR / (FAR - depth * (FAR - NEAR))
+}
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum ViewMode {
@@ -62,8 +68,8 @@ impl Default for Camera {
             pitch: 0.0,
             yaw: 0.0,
             fov_y: 45.0,
-            near: 50.0,
-            far: 500000.0,
+            near: NEAR,
+            far: FAR,
             view_mode: ViewMode::default(),
             // TODO: Move elsewhere as it's not a part of the camera
             sun_angle: LightAngle {

@@ -64,7 +64,6 @@ pub enum Message {
     TerrainReceived((GeoLocation, Option<(GeoTiff, Vec<PeakInstance>)>)),
     TerrainProcessed(GeoLocation, Vec<Vertex>, Vec<u32>),
     PeakLabelsPrepared(GeoLocation, Vec<Label>),
-    AdditionalFontsLoaded,
 }
 
 #[derive(Clone)]
@@ -443,15 +442,14 @@ impl State {
 
                         sender.send(Message::TerrainReceived((location, data)))?;
 
-                        Ok::<_, Error>(())
+                        Ok::<(), Error>(())
                     };
 
-                    tokio::spawn(future);
+                    let fetching_terrain_handle = tokio::spawn(future);
 
                     self.status_notifier.update_pending_operations(
                         Some(location),
-                        &[PendingOperation::FetchingTerrain],
-                        &[],
+                        vec![(PendingOperation::FetchingTerrain, fetching_terrain_handle)],
                     );
                 }
                 Message::TerrainReceived((location, data)) => {
@@ -479,27 +477,31 @@ impl State {
                             let (vertices, indices) = RenderBuffer::process_terrain(&gtiff)?;
                             sender.send(Message::TerrainProcessed(location, vertices, indices))?;
 
-                            Ok::<_, Error>(())
+                            Ok::<(), Error>(())
                         };
 
                         let sender = self.sender.clone();
                         let prepare_peak_labels = move || {
                             let labels = TextState::prepare_peak_labels(&peaks);
-                            sender
-                                .send(Message::PeakLabelsPrepared(location, labels))
-                                .ok();
+                            sender.send(Message::PeakLabelsPrepared(location, labels))?;
+
+                            Ok::<(), Error>(())
                         };
 
-                        tokio::task::spawn_blocking(process_terrain);
-                        tokio::task::spawn_blocking(prepare_peak_labels);
+                        let processing_terrain_handle =
+                            tokio::task::spawn_blocking(process_terrain);
+                        let preparing_labels_handle =
+                            tokio::task::spawn_blocking(prepare_peak_labels);
 
                         self.status_notifier.update_pending_operations(
                             Some(location),
-                            &[
-                                PendingOperation::ProcessingTerrain,
-                                PendingOperation::PreparingLabels,
+                            vec![
+                                (
+                                    PendingOperation::ProcessingTerrain,
+                                    processing_terrain_handle,
+                                ),
+                                (PendingOperation::PreparingLabels, preparing_labels_handle),
                             ],
-                            &[PendingOperation::FetchingTerrain],
                         );
                     } else {
                         self.peaks.insert(location, vec![]);
@@ -514,20 +516,9 @@ impl State {
                         let (vertices, indices) = RenderBuffer::process_empty_terrain(location)?;
                         self.sender
                             .send(Message::TerrainProcessed(location, vertices, indices))?;
-                        self.status_notifier.update_pending_operations(
-                            Some(location),
-                            &[],
-                            &[PendingOperation::FetchingTerrain],
-                        );
                     }
                 }
                 Message::TerrainProcessed(location, vertices, indices) => {
-                    self.status_notifier.update_pending_operations(
-                        Some(location),
-                        &[PendingOperation::WritingTerrain],
-                        &[PendingOperation::ProcessingTerrain],
-                    );
-
                     self.render_environment.add_terrain(
                         &self.device,
                         &self.queue,
@@ -536,30 +527,11 @@ impl State {
                         &indices,
                     );
 
-                    self.status_notifier.update_pending_operations(
-                        Some(location),
-                        &[],
-                        &[PendingOperation::WritingTerrain],
-                    );
                     changed = true;
                 }
                 Message::PeakLabelsPrepared(location, labels) => {
                     self.text_state.add_labels(location, labels);
 
-                    self.status_notifier.update_pending_operations(
-                        Some(location),
-                        &[],
-                        &[PendingOperation::PreparingLabels],
-                    );
-
-                    changed = true;
-                }
-                Message::AdditionalFontsLoaded => {
-                    self.status_notifier.update_pending_operations(
-                        None,
-                        &[],
-                        &[PendingOperation::LoadingFonts],
-                    );
                     changed = true;
                 }
             }
@@ -583,6 +555,8 @@ impl State {
                 &self.postprocessing_uniforms,
             );
         }
+
+        self.status_notifier.check_progress();
 
         Ok(changed)
     }
@@ -708,22 +682,21 @@ impl State {
                                 });
 
                             join_all(label_preparation_futures).await;
-                            sender.send(Message::AdditionalFontsLoaded).ok();
                         }
                         Err(err) => {
                             log::error!("{err}");
-                            sender.send(Message::AdditionalFontsLoaded).ok();
                             ADDITIONAL_FONTS_LOADED.with_borrow_mut(|loaded| *loaded = false);
                         }
                     };
+
+                    Ok::<(), Error>(())
                 };
 
-                tokio::spawn(future);
+                let loading_fonts_handle = tokio::spawn(future);
 
                 self.status_notifier.update_pending_operations(
                     None,
-                    &[PendingOperation::LoadingFonts],
-                    &[],
+                    vec![(PendingOperation::LoadingFonts, loading_fonts_handle)],
                 );
             }
         }

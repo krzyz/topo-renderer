@@ -3,6 +3,8 @@ extern crate approx;
 
 pub mod common;
 pub mod render;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 use color_eyre::eyre::Error;
 #[cfg(target_arch = "wasm32")]

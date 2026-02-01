@@ -178,6 +178,43 @@
         --phase: 360deg;
       }
     }
+
+    #toast {
+      padding: 10px;
+      background-color: #911;
+      color: #fff;
+      text-align: center;
+      border-radius: 2px;
+
+      position: absolute;
+      z-index: 1;
+      left: 50%;
+      top: 30px;
+      font-size: 17px;
+      white-space: nowrap;
+      transform: translate(-50%, 50%);
+    }
+
+    #toast:has(#toast-desc:empty) {
+      visibility: hidden;
+    }
+
+    #toast > #desc {
+      color: #fff;
+
+      padding: 16px;
+
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    #toast > .next {
+      display: none;
+    }
+
+    #toast > button {
+      font-size: 12px;
+    }
     </style>
   </head>
   <body>
@@ -267,6 +304,12 @@
         <span id="status"></span>
       </div>
     </div>
+    <div id="toast">
+      <span id="toast-count">1</span>
+      <span id="toast-desc">Description</span>
+      <button id="toast-close-btn">close</button>
+    </div>
+
     <script type="module">
     import init from "./pkg/topo_renderer.js";
     import { set_location, load_fonts } from "./pkg/topo_renderer.js";
@@ -286,6 +329,19 @@
 
     document.getElementById("additionalFonts").onclick = function () {
       load_fonts();
+    };
+
+    document.getElementById("toast-close-btn").onclick = function () {
+      var toast = document.getElementById("toast");
+      var toast_desc = document.getElementById("toast-desc");
+      var next = toast.getElementsByClassName("next")[0];
+      if (next) {
+        toast_desc.innerHTML = next.innerHTML;
+        next.remove();
+      } else {
+        toast_desc.innerHTML = "";
+      }
+      document.getElementById("toast-count").innerHTML -= 1;
     };
 
     run();

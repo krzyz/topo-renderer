@@ -1,9 +1,12 @@
+#[cfg(target_arch = "wasm32")]
+use crate::web::js::push_notification;
+use topo_common::GeoLocation;
+
 use std::collections::HashMap;
 
 use color_eyre::eyre::Error;
 use futures::FutureExt;
 use tokio_with_wasm::alias as tokio;
-use topo_common::GeoLocation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PendingOperation {
@@ -46,9 +49,20 @@ impl StatusNotifier {
                 .and_modify(|operations_map| {
                     if let Some(handle) = operations_map.remove(&operation)
                         && let Some(result) = handle.now_or_never()
-                        && let Err(err) = result
                     {
-                        log::error!("{err}");
+                        match result {
+                            #[allow(unused)]
+                            Ok(Err(err)) => {
+                                #[cfg(target_arch = "wasm32")]
+                                push_notification(format!(
+                                    "Error for operation {operation:#?}: {err}"
+                                ));
+                            }
+                            Err(err) => {
+                                log::debug!("Join error for {operation:#?}: {err}");
+                            }
+                            _ => (),
+                        }
                     };
                 });
         }

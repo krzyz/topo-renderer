@@ -280,7 +280,7 @@ pub fn load_fonts() {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 pub async fn async_main() {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
     let event_loop_proxy = event_loop.create_proxy();

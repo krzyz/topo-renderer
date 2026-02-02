@@ -57,6 +57,7 @@
             wgsl-analyzer
             just
             lldb
+            taplo
             superhtml
             vscode-langservers-extracted
             biome

@@ -1,10 +1,29 @@
 [workspace]
+members = [
+  "topo-backend",
+  "topo-common",
+  "topo-renderer",
+  "topo-renderer-desktop",
+  "topo-renderer-new",
+  "topo-renderer-web",
+]
 resolver = "3"
-members = [ "topo-backend", "topo-common", "topo-renderer"]
 
 [workspace.dependencies]
-log = "0.4.27"
-serde = { version = "1.0.219", features = ["derive"] }
 color-eyre = "0.6.4"
 config = "0.15.13"
-strum = { version = "0.27.1", features = ["derive"] }
+log = "0.4.27"
+tokio = { version = "1.49.0 ", features = ["rt-multi-thread", "macros"] }
+tokio_with_wasm = { version = "0.9.0", features = [
+  "rt-multi-thread",
+  "macros",
+] }
+winit = "0.30.12"
+
+[workspace.dependencies.serde]
+version = "1.0.219"
+features = ["derive"]
+
+[workspace.dependencies.strum]
+version = "0.27.1"
+features = ["derive"]

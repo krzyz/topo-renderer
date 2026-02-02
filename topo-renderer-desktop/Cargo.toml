@@ -1,0 +1,12 @@
+[package]
+name = "topo-renderer-desktop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+color-eyre = { workspace = true }
+env_logger = "0.11"
+topo-renderer-new = { path = "../topo-renderer-new" }
+tokio = { workspace = true }
+tokio_with_wasm = { workspace = true }
+winit = { workspace = true }

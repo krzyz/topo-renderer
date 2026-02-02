@@ -1,0 +1,22 @@
+[package]
+name = "topo-renderer-new"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+topo-common = { path = "../topo-common" }
+
+bytemuck = { version = "1.23.0", features = ["derive"] }
+bytes = "1.10.1"
+color-eyre = { workspace = true }
+futures = "0.3.31"
+glam = { version = "0.31.0", features = ["bytemuck"] }
+itertools = "0.14.0"
+log = { workspace = true }
+reqwest = { version = "0.13.1", features = ["stream"] }
+strum = { workspace = true }
+tokio = { workspace = true }
+tokio_with_wasm = { workspace = true }
+wgpu = { version = "28.0.0", features = ["webgpu"] }
+winit = { workspace = true }
+geotiff = "0.1.0"

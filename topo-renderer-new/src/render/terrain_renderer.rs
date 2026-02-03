@@ -159,11 +159,20 @@ impl TerrainRenderer {
         vertices: &Vec<Vertex>,
         indices: &Vec<u32>,
     ) {
+        log::info!(
+            "Adding vertices for {}, {}",
+            location.latitude,
+            location.longitude
+        );
         let mut render_buffer = RenderBuffer::new(device);
 
         render_buffer.add_terrain(device, queue, vertices, indices);
 
         self.render_buffers.insert(location, render_buffer);
+        log::info!("Render buffer contains: ");
+        for key in self.render_buffers.keys() {
+            log::info!("{}, {}", key.latitude, key.longitude);
+        }
     }
 
     pub fn unload_terrain(&mut self, location: GeoLocation) {

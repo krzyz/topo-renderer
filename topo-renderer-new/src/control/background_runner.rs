@@ -1,28 +1,24 @@
-use std::{io::Cursor, sync::Arc};
+use std::io::Cursor;
 
 use bytes::Bytes;
 use color_eyre::{Report, Result, eyre::OptionExt};
-use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use geotiff::GeoTiff;
-use tokio::{select, sync::mpsc::Receiver, task::spawn_blocking};
+use tokio::{
+    select,
+    sync::mpsc::Receiver,
+    task::{JoinSet, spawn_blocking},
+};
 use tokio_with_wasm::alias as tokio;
 use topo_common::{GeoCoord, GeoLocation};
-use winit::{event_loop::EventLoopProxy, window::Window};
+use winit::event_loop::EventLoopProxy;
 
 use crate::{
     app::ApplicationEvent,
-    render::{
-        render_buffer::RenderBuffer,
-        render_engine::{RenderEngine, RenderEvent},
-    },
+    render::{render_buffer::RenderBuffer, render_engine::RenderEvent},
 };
 
 #[derive(Debug)]
 pub enum BackgroundEvent {
-    InitializeState {
-        window: Arc<Window>,
-        event_loop_proxy: EventLoopProxy<ApplicationEvent>,
-    },
     DataRequested {
         requested: GeoLocation,
         current_location: GeoCoord,
@@ -35,7 +31,7 @@ pub enum BackgroundEvent {
 pub struct BackgroundRunner {
     event_receiver: Receiver<BackgroundEvent>,
     render_event_loopback: EventLoopProxy<ApplicationEvent>,
-    running_tasks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
+    running_tasks: JoinSet<Result<()>>,
 }
 
 pub async fn fetch_terrain(location: GeoLocation) -> Result<Option<GeoTiff>> {
@@ -70,7 +66,7 @@ impl BackgroundRunner {
         Self {
             event_receiver,
             render_event_loopback,
-            running_tasks: FuturesUnordered::new(),
+            running_tasks: JoinSet::new(),
         }
     }
 
@@ -81,20 +77,6 @@ impl BackgroundRunner {
         use BackgroundEvent::*;
 
         match event {
-            InitializeState {
-                window,
-                event_loop_proxy,
-            } => {
-                let _ = match RenderEngine::new(window, event_loop_proxy).await {
-                    Ok(render_engine) => render_event_loopback
-                        .send_event(ApplicationEvent::RenderEngineReady(render_engine)),
-                    Err(err) => {
-                        render_event_loopback.send_event(ApplicationEvent::TerminateWithError(err))
-                    }
-                };
-
-                Ok(())
-            }
             DataRequested {
                 requested,
                 current_location,
@@ -120,6 +102,7 @@ impl BackgroundRunner {
                             }
                             RenderBuffer::process_terrain(&terrain)?
                         } else {
+                            log::info!("Processing empty terrain");
                             RenderBuffer::process_empty_terrain(requested)?
                         };
 
@@ -129,9 +112,11 @@ impl BackgroundRunner {
 
                 let (vertices, indices) = spawn_blocking(process_terrain).await??;
 
-                let _ = render_event_loopback.send_event(ApplicationEvent::RenderEvent(
+                if let Err(err) = render_event_loopback.send_event(ApplicationEvent::RenderEvent(
                     RenderEvent::TerrainReady(requested, vertices, indices),
-                ));
+                )) {
+                    log::error!("{err}");
+                }
 
                 Ok(())
             }
@@ -143,10 +128,11 @@ impl BackgroundRunner {
             select! {
                 Some(event) = self.event_receiver.recv() => {
                     let sender = self.render_event_loopback.clone();
-                    let z = async { Ok(Self::process_event(sender, event).await?) };
-                    self.running_tasks.push(z.boxed());
+                    self.running_tasks.spawn(async {
+                        Ok(Self::process_event(sender, event).await?)
+                    });
                 }
-                Some(result) = self.running_tasks.next() => {
+                Some(result) = self.running_tasks.join_next() => {
                     if let Err(err) = result {
                         log::error!("Error in a background task: {err}");
                     }

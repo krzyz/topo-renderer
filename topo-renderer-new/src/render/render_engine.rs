@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
 use color_eyre::Result;
-use glam::Vec3;
 use topo_common::{GeoCoord, GeoLocation};
-use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
+use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    app::ApplicationEvent,
-    data::Size,
-    render::{
-        camera::Camera,
-        data::{PostprocessingUniforms, Uniforms, Vertex},
-    },
+    data::{Size, application_data::ApplicationData},
+    render::data::{Uniforms, Vertex},
 };
 
 use super::application_renderers::ApplicationRenderers;
@@ -25,23 +20,16 @@ pub enum RenderEvent {
 /// and so must be done synchronously in a tight loop
 pub struct RenderEngine {
     window: Arc<Window>,
-    event_loop_proxy: EventLoopProxy<ApplicationEvent>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
-    camera: Camera,
-    uniforms: Uniforms,
-    postprocessing_uniforms: PostprocessingUniforms,
     renderers: ApplicationRenderers,
 }
 
 impl RenderEngine {
-    pub async fn new(
-        window: Arc<Window>,
-        event_loop_proxy: EventLoopProxy<ApplicationEvent>,
-    ) -> Result<Self> {
+    pub async fn new(window: Arc<Window>) -> Result<Self> {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             #[cfg(not(target_arch = "wasm32"))]
@@ -95,25 +83,13 @@ impl RenderEngine {
 
         let renderers = ApplicationRenderers::new(&device, format, size.into());
 
-        let mut camera = Camera::default();
-        camera.set_eye(Vec3::new(0.0, 0.0, 0.0));
-
-        let pixelize_n = 100.0;
-        let bounds = (size.width as f32, size.height as f32).into();
-        let uniforms = Uniforms::new(&camera, bounds);
-        let postprocessing_uniforms = PostprocessingUniforms::new(bounds, pixelize_n);
-
         Ok(Self {
             window,
-            event_loop_proxy,
             surface,
             device,
             queue,
             config,
             size,
-            camera,
-            uniforms,
-            postprocessing_uniforms,
             renderers,
         })
     }
@@ -130,22 +106,22 @@ impl RenderEngine {
         (self.size.width as f32, self.size.height as f32).into()
     }
 
-    pub fn update_size(&mut self, new_size: PhysicalSize<u32>) {
+    pub fn update_size(&mut self, new_size: PhysicalSize<u32>, data: &mut ApplicationData) {
         self.surface.configure(&self.device, &self.config);
         self.size = new_size;
         let bounds = (new_size.width as f32, new_size.height as f32).into();
-        self.uniforms = self.uniforms.update_projection(&self.camera, bounds);
-        self.postprocessing_uniforms = self.postprocessing_uniforms.with_new_viewport(bounds);
+        data.uniforms = data.uniforms.update_projection(&data.camera, bounds);
+        data.postprocessing_uniforms = data.postprocessing_uniforms.with_new_viewport(bounds);
     }
 
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>, data: &mut ApplicationData) -> bool {
         if new_size.width > 0 && new_size.height > 0 {
             // TODO: Might be a better way to do this; buffer gets touched during resize
             // so we unmap it so that there's no chance of crashing
             //self.render_environment.get_depth_read_buffer_mut().unmap();
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-            self.update_size(new_size);
+            self.update_size(new_size, data);
 
             /*
             self.text_state.viewport.update(
@@ -164,21 +140,30 @@ impl RenderEngine {
                 &self.device,
                 &self.queue,
                 new_size.into(),
-                &self.uniforms,
-                &self.postprocessing_uniforms,
+                &data.uniforms,
+                &data.postprocessing_uniforms,
             );
+            true
+        } else {
+            false
         }
     }
 
-    pub fn update(&mut self) -> Result<bool> {
-        Ok(true)
+    pub fn update(&mut self, data: &mut ApplicationData) {
+        let size: Size<u32> = self.size.into();
+        data.uniforms = data
+            .uniforms
+            .update_projection(&data.camera, (size.width as f32, size.height as f32).into());
+        self.renderers.terrain.update(
+            &self.device,
+            &self.queue,
+            self.size.into(),
+            &data.uniforms,
+            &data.postprocessing_uniforms,
+        )
     }
 
-    pub fn render(&mut self, changed: bool) -> std::result::Result<(), wgpu::SurfaceError> {
-        if !changed {
-            return Ok(());
-        }
-
+    pub fn render(&mut self) -> std::result::Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.config.format),
@@ -204,7 +189,8 @@ impl RenderEngine {
         Ok(())
     }
 
-    pub fn process_event(&mut self, event: RenderEvent) {
+    /// Returns whether scene changed and needs to be rerendered
+    pub fn process_event(&mut self, event: RenderEvent, data: &mut ApplicationData) -> bool {
         use RenderEvent::*;
         match event {
             TerrainReady(location, vertices, indices) => self.renderers.terrain.add_terrain(
@@ -215,9 +201,11 @@ impl RenderEngine {
                 &indices,
             ),
             ResetCamera(current_location, height) => {
-                self.camera.reset(current_location, height + 10.0);
-                self.uniforms = Uniforms::new(&self.camera, self.bounds());
+                data.camera.reset(current_location, height + 10.0);
+                data.uniforms = Uniforms::new(&data.camera, self.bounds());
             }
         }
+
+        true
     }
 }

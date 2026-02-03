@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use color_eyre::Result;
 use itertools::Itertools;
 use tokio::sync::mpsc::Sender;
+use tokio_with_wasm::alias as tokio;
 use topo_common::{GeoCoord, GeoLocation};
 
 use crate::{

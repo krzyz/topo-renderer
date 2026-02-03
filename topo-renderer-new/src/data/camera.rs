@@ -2,7 +2,8 @@ use glam::{Vec3, vec3};
 use std::f32::consts::PI;
 use topo_common::GeoCoord;
 
-use super::geometry::transform;
+use crate::render::geometry::transform;
+
 pub const NEAR: f32 = 50.0;
 pub const FAR: f32 = 500000.0;
 

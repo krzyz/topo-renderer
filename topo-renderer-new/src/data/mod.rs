@@ -1,6 +1,7 @@
 pub mod application_data;
+pub mod camera;
 
-use winit::dpi::PhysicalSize;
+use winit::dpi::{PhysicalSize, Pixel};
 
 pub fn pad_256(size: u32) -> u32 {
     ((size - 1) / 256 + 1) * 256
@@ -27,5 +28,14 @@ impl<T> From<(T, T)> for Size<T> {
             width: value.0,
             height: value.1,
         }
+    }
+}
+
+impl<T> From<winit::dpi::LogicalSize<T>> for Size<T>
+where
+    T: Pixel,
+{
+    fn from(value: winit::dpi::LogicalSize<T>) -> Self {
+        (value.width, value.height).into()
     }
 }

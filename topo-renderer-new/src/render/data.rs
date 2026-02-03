@@ -1,6 +1,4 @@
-use crate::data::Size;
-
-use super::camera::Camera;
+use crate::data::{Size, camera::Camera};
 
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]

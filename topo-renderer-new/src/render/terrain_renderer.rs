@@ -175,7 +175,7 @@ impl TerrainRenderer {
         }
     }
 
-    pub fn unload_terrain(&mut self, location: GeoLocation) {
+    pub fn unload_terrain(&mut self, location: &GeoLocation) {
         self.render_buffers.remove(&location);
     }
 

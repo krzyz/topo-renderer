@@ -7,8 +7,9 @@ use tokio_with_wasm::alias as tokio;
 use topo_common::{GeoCoord, GeoLocation};
 
 use crate::{
-    control::background_runner::BackgroundEvent, data::application_data::ApplicationData,
-    render::geometry::R0,
+    control::background_runner::BackgroundEvent,
+    data::application_data::ApplicationData,
+    render::{geometry::R0, render_engine::RenderEngine},
 };
 
 pub struct UiController {
@@ -23,6 +24,7 @@ impl UiController {
         &mut self,
         location: GeoCoord,
         data: &mut ApplicationData,
+        engine: &mut RenderEngine,
     ) -> Result<()> {
         data.current_location = Some(location);
         let mut new_locations: HashSet<_> = Self::get_locations_range(location, 100_000.0)
@@ -35,15 +37,16 @@ impl UiController {
             if is_current_in_new {
                 new_locations.remove(&location);
             } else {
-                to_unload.push(location);
+                to_unload.push(*location);
             }
         }
 
-        // for location in to_unload.into_iter() {
-        //     self.text_state.remove_labels(location);
-        //     self.peaks.remove(&location);
-        //     self.render_environment.unload_terrain(location);
-        // }
+        for location in to_unload.into_iter() {
+            //self.text_state.remove_labels(location);
+            // self.peaks.remove(&location);
+            data.loaded_locations.remove(&location);
+            engine.renderers_mut().terrain.unload_terrain(&location);
+        }
 
         for requested in new_locations.into_iter() {
             self.sender.blocking_send(BackgroundEvent::DataRequested {

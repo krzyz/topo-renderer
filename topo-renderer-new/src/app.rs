@@ -29,7 +29,7 @@ pub enum ApplicationEvent {
 }
 
 pub struct Application {
-    state: Option<RenderEngine>,
+    engine: Option<RenderEngine>,
     controllers: ApplicationControllers,
     data: ApplicationData,
     window_attributes: WindowAttributes,
@@ -54,7 +54,7 @@ impl Application {
         let data = ApplicationData::new(bounds);
 
         Self {
-            state: None,
+            engine: None,
             controllers,
             data,
             window_attributes,
@@ -98,7 +98,7 @@ impl ApplicationRunner {
 
 impl ApplicationHandler<ApplicationEvent> for Application {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.state.is_some() {
+        if self.engine.is_some() {
             return;
         }
 
@@ -143,7 +143,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        let Some(engine) = &mut self.state else {
+        let Some(engine) = &mut self.engine else {
             // always check for resized as it may happen before the
             // wgpu engine gets initialized (e.g. in the browser)
             match event {
@@ -163,13 +163,15 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                             engine.window().request_redraw();
                         }
                         log::info!("Received engine");
-                        self.state = Some(engine);
-                        if let Err(err) = self
-                            .controllers
-                            .ui_controller
-                            .change_location(GeoCoord::new(49.35135, 20.21139), &mut self.data)
-                        {
-                            log::error!("{err}");
+                        self.engine = Some(engine);
+                        if let Some(engine) = self.engine.as_mut() {
+                            if let Err(err) = self.controllers.ui_controller.change_location(
+                                GeoCoord::new(49.35135, 20.21139),
+                                &mut self.data,
+                                engine,
+                            ) {
+                                log::error!("{err}");
+                            }
                         }
                     }
                     Ok(None) => {
@@ -244,21 +246,25 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                 false
             }
             ApplicationEvent::RenderEvent(render_event) => {
-                if let Some(state) = &mut self.state {
+                if let Some(state) = &mut self.engine {
                     state.process_event(render_event, &mut self.data)
                 } else {
                     false
                 }
             }
             ApplicationEvent::ChangeLocation(location) => {
-                if let Err(err) = self
-                    .controllers
-                    .ui_controller
-                    .change_location(location, &mut self.data)
-                {
-                    log::error!("{err}");
+                if let Some(engine) = self.engine.as_mut() {
+                    if let Err(err) = self.controllers.ui_controller.change_location(
+                        location,
+                        &mut self.data,
+                        engine,
+                    ) {
+                        log::error!("{err}");
+                    }
+                    true
+                } else {
+                    false
                 }
-                true
             }
         };
 

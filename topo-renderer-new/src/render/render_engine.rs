@@ -195,13 +195,16 @@ impl RenderEngine {
     pub fn process_event(&mut self, event: RenderEvent, data: &mut ApplicationData) -> bool {
         use RenderEvent::*;
         match event {
-            TerrainReady(location, vertices, indices) => self.renderers.terrain.add_terrain(
-                &self.device,
-                &self.queue,
-                location,
-                &vertices,
-                &indices,
-            ),
+            TerrainReady(location, vertices, indices) => {
+                self.renderers.terrain.add_terrain(
+                    &self.device,
+                    &self.queue,
+                    location,
+                    &vertices,
+                    &indices,
+                );
+                data.loaded_locations.insert(location);
+            }
             ResetCamera(current_location, height) => {
                 data.camera.reset(current_location, height + 10.0);
                 data.uniforms = Uniforms::new(&data.camera, self.bounds());
@@ -209,5 +212,9 @@ impl RenderEngine {
         }
 
         true
+    }
+
+    pub fn renderers_mut(&mut self) -> &mut ApplicationRenderers {
+        &mut self.renderers
     }
 }

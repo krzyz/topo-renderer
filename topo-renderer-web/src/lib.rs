@@ -68,8 +68,11 @@ pub async fn async_start() -> Result<()> {
     {
         Ok::<_, Report>(canvas) => {
             let window_attributes = Window::default_attributes().with_canvas(Some(canvas));
-            let app_runner = ApplicationRunner::new(window_attributes);
+            let mut app_runner = ApplicationRunner::new(window_attributes);
             EVENT_LOOP_PROXY.with(|cell| cell.set(app_runner.get_event_loop_proxy()).ok());
+            if let Err(err) = app_runner.configure_background_runner(|f| tokio::spawn(f)) {
+                log::error!("{err:?}");
+            }
             Ok(app_runner.run()?)
         }
         Err(err) => {

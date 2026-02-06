@@ -1,7 +1,8 @@
+use std::pin::Pin;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use color_eyre::Result;
+use color_eyre::{Report, Result};
 use tokio::{
     sync::mpsc::{Sender, channel},
     task::JoinHandle,
@@ -24,8 +25,13 @@ use crate::{
     data::application_data::ApplicationData,
 };
 
+pub enum RunnerState {
+    Initialized(BackgroundRunner),
+    Started(JoinHandle<()>),
+}
+
 pub struct ApplicationControllers {
-    runner_handle: JoinHandle<()>,
+    runner_state: Option<RunnerState>,
     event_sender: Sender<BackgroundEvent>,
     pub ui_controller: UiController,
     pub camera_controller: CameraController,
@@ -36,20 +42,32 @@ impl ApplicationControllers {
     pub fn new(render_event_loopback: EventLoopProxy<ApplicationEvent>) -> Self {
         let (event_sender, event_receiver) = channel(128);
 
-        let mut runner = BackgroundRunner::new(event_receiver, render_event_loopback);
-
-        let runner_handle = tokio::spawn(async move { runner.run().await });
+        let runner = BackgroundRunner::new(event_receiver, render_event_loopback);
 
         let ui_controller = UiController::new(event_sender.clone());
         let camera_controller = CameraController::new(0.01);
 
         ApplicationControllers {
-            runner_handle,
+            runner_state: Some(RunnerState::Initialized(runner)),
             event_sender,
             ui_controller,
             camera_controller,
             previous_instant: Instant::now(),
         }
+    }
+
+    pub fn configure_background_runner(
+        &mut self,
+        async_runner: impl FnOnce(
+            Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>,
+        ) -> JoinHandle<()>,
+    ) -> Result<(), Report> {
+        if let Some(RunnerState::Initialized(mut runner)) = self.runner_state.take() {
+            let pinned = Box::pin(async move { runner.run().await });
+            self.runner_state = Some(RunnerState::Started(async_runner(pinned)));
+        }
+
+        Ok(())
     }
 
     pub fn send_event(&mut self, event: BackgroundEvent) -> Result<()> {
@@ -79,6 +97,8 @@ impl ApplicationControllers {
 
 impl Drop for ApplicationControllers {
     fn drop(&mut self) {
-        self.runner_handle.abort();
+        if let Some(RunnerState::Started(handle)) = &mut self.runner_state {
+            handle.abort();
+        }
     }
 }

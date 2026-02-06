@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use color_eyre::Report;
 use futures::channel::oneshot;
+use tokio::task::JoinHandle;
 use tokio_with_wasm::alias as tokio;
 use topo_common::GeoCoord;
 use winit::{
@@ -89,6 +90,15 @@ impl ApplicationRunner {
         self.event_loop.create_proxy()
     }
 
+    pub fn configure_background_runner(
+        &mut self,
+        async_runner: impl FnOnce(Pin<Box<dyn Future<Output = ()> + Send + Sync>>) -> JoinHandle<()>,
+    ) -> Result<(), Report> {
+        self.app
+            .controllers
+            .configure_background_runner(async_runner)
+    }
+
     pub fn run(self) -> Result<(), EventLoopError> {
         let mut app = self.app;
         self.event_loop.run_app(&mut app)
@@ -133,7 +143,10 @@ impl ApplicationHandler<ApplicationEvent> for Application {
         #[cfg(target_arch = "wasm32")]
         tokio::spawn(initialize_engine);
         #[cfg(not(target_arch = "wasm32"))]
-        tokio::runtime::Handle::current().block_on(initialize_engine);
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(initialize_engine);
     }
 
     fn window_event(

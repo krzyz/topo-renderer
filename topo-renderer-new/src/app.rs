@@ -91,7 +91,6 @@ impl ApplicationRunner {
 
     pub fn run(self) -> Result<(), EventLoopError> {
         let mut app = self.app;
-        log::info!("running app");
         self.event_loop.run_app(&mut app)
     }
 }
@@ -121,7 +120,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                     }
                 }
                 Err(err) => {
-                    log::error!("{err}");
+                    log::error!("{err:?}");
                     if let Err(err) =
                         event_loop_proxy.send_event(ApplicationEvent::TerminateWithError(err))
                     {
@@ -158,11 +157,9 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                 match receiver.try_recv() {
                     Ok(Some(mut engine)) => {
                         if let Some(physical_size) = self.resized.take() {
-                            log::info!("Applying resize event obtained before engine got created");
                             self.surface_configured = engine.resize(physical_size, &mut self.data);
                             engine.window().request_redraw();
                         }
-                        log::info!("Received engine");
                         self.engine = Some(engine);
                         if let Some(engine) = self.engine.as_mut() {
                             if let Err(err) = self.controllers.ui_controller.change_location(
@@ -170,7 +167,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                                 &mut self.data,
                                 engine,
                             ) {
-                                log::error!("{err}");
+                                log::error!("{err:?}");
                             }
                         }
                     }
@@ -178,7 +175,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                         log::debug!("No engine received at initialization");
                     }
                     Err(err) => {
-                        log::debug!("Canceled engine initialization: {err}");
+                        log::debug!("Canceled engine initialization: {err:?}");
                     }
                 }
             }
@@ -188,7 +185,6 @@ impl ApplicationHandler<ApplicationEvent> for Application {
         if !self.controllers.input(&event) {
             match event {
                 WindowEvent::Resized(physical_size) => {
-                    log::info!("Resized event");
                     self.surface_configured = engine.resize(physical_size, &mut self.data);
                     // On macos the window needs to be redrawn manually after resizing
                     engine.window().request_redraw();
@@ -241,7 +237,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: ApplicationEvent) {
         let require_render = match event {
             ApplicationEvent::TerminateWithError(err) => {
-                eprintln!("{err}");
+                log::error!("{err:?}");
                 event_loop.exit();
                 false
             }
@@ -259,7 +255,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                         &mut self.data,
                         engine,
                     ) {
-                        log::error!("{err}");
+                        log::error!("{err:?}");
                     }
                     true
                 } else {

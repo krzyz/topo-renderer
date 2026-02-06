@@ -58,9 +58,7 @@ impl RenderEngine {
             .await?;
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
+
         let format = {
             let mut format = surface_caps.formats[0];
             let format_srgb = format.add_srgb_suffix();
@@ -108,7 +106,6 @@ impl RenderEngine {
 
     pub fn update_size(&mut self, new_size: PhysicalSize<u32>, data: &mut ApplicationData) {
         self.surface.configure(&self.device, &self.config);
-        log::info!("surface configured");
         self.size = new_size;
         let bounds = (new_size.width as f32, new_size.height as f32).into();
         data.uniforms = data.uniforms.update_projection(&data.camera, bounds);

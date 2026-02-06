@@ -131,12 +131,13 @@ impl BackgroundRunner {
                     self.running_tasks.spawn(async {
                         Ok(Self::process_event(sender, event).await?)
                     });
+                    log::info!("Background tasks running: {}", self.running_tasks.len());
                 }
                 Some(result) = self.running_tasks.join_next() => {
                     if let Err(err) = result {
-                        log::error!("Error in a background task: {err}");
+                        log::error!("Error in a background task: {err:?}");
                     }
-                    log::info!("Background tasks still running: {}", self.running_tasks.len());
+                    log::info!("Task finished, still running: {}", self.running_tasks.len());
                 }
             }
         }

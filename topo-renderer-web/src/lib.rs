@@ -73,7 +73,7 @@ pub async fn async_start() -> Result<()> {
             Ok(app_runner.run()?)
         }
         Err(err) => {
-            log::error!("{err}");
+            log::error!("{err:?}");
             Err(err)
         }
     }

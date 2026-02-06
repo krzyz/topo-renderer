@@ -1,6 +1,9 @@
 mod js;
 
-use topo_renderer_new::app::run_app;
+use std::cell::OnceCell;
+
+use topo_common::GeoCoord;
+use topo_renderer_new::app::{ApplicationEvent, ApplicationRunner};
 
 use color_eyre::{
     eyre::{eyre, OptionExt},
@@ -8,19 +11,24 @@ use color_eyre::{
 };
 use tokio_with_wasm::alias as tokio;
 use wasm_bindgen::prelude::*;
-use winit::window::Window;
+use winit::{event_loop::EventLoopProxy, window::Window};
+
+thread_local! {
+    pub static EVENT_LOOP_PROXY: OnceCell<EventLoopProxy<ApplicationEvent>> = OnceCell::new();
+    //pub static ADDITIONAL_FONTS_LOADED: RefCell<bool> = RefCell::new(false);
+}
 
 #[wasm_bindgen]
 pub fn set_location(latitude: f32, longitude: f32) {
-    // EVENT_LOOP_PROXY.with_borrow_mut(|proxy| {
-    //     if let Some(proxy) = proxy {
-    //         proxy
-    //             .send_event(UserEvent::StateEvent(StateEvent::ChangeLocation(
-    //                 GeoCoord::new(latitude, longitude),
-    //             )))
-    //             .unwrap();
-    //     }
-    // })
+    EVENT_LOOP_PROXY.with(|cell| {
+        if let Some(proxy) = cell.get() {
+            if let Err(err) = proxy.send_event(ApplicationEvent::ChangeLocation(GeoCoord::new(
+                latitude, longitude,
+            ))) {
+                log::error!("{err}");
+            }
+        }
+    })
 }
 
 #[wasm_bindgen]
@@ -60,7 +68,9 @@ pub async fn async_start() -> Result<()> {
     {
         Ok::<_, Report>(canvas) => {
             let window_attributes = Window::default_attributes().with_canvas(Some(canvas));
-            Ok(run_app(window_attributes).await?)
+            let app_runner = ApplicationRunner::new(window_attributes);
+            EVENT_LOOP_PROXY.with(|cell| cell.set(app_runner.get_event_loop_proxy()).ok());
+            Ok(app_runner.run()?)
         }
         Err(err) => {
             log::error!("{err}");

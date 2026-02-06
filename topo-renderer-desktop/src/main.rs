@@ -1,6 +1,6 @@
-use color_eyre::Result;
+use color_eyre::{Report, Result};
 use tokio_with_wasm::alias as tokio;
-use topo_renderer_new::app::run_app;
+use topo_renderer_new::app::ApplicationRunner;
 use winit::window::Window;
 
 #[tokio::main]
@@ -15,5 +15,9 @@ pub async fn main() -> Result<()> {
         .with_min_inner_size(LogicalSize::new(width as f64, height as f64))
         .with_inner_size(LogicalSize::new(width as f64, height as f64));
 
-    Ok(run_app(window_attributes).await?)
+    Ok(tokio::task::spawn_blocking(|| {
+        let app_runner = ApplicationRunner::new(window_attributes);
+        Ok::<(), Report>(app_runner.run()?)
+    })
+    .await??)
 }

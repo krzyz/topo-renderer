@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use color_eyre::{Report, Result};
+use color_eyre::Report;
 use futures::channel::oneshot;
 use tokio_with_wasm::alias as tokio;
 use topo_common::GeoCoord;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
+    error::EventLoopError,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     window::WindowAttributes,
@@ -23,6 +24,7 @@ use crate::{
 
 pub enum ApplicationEvent {
     TerminateWithError(Report),
+    ChangeLocation(GeoCoord),
     RenderEvent(RenderEvent),
 }
 
@@ -44,6 +46,7 @@ impl Application {
         event_loop_proxy: EventLoopProxy<ApplicationEvent>,
     ) -> Self {
         let controllers = ApplicationControllers::new(event_loop_proxy.clone());
+
         let bounds = window_attributes
             .inner_size
             .map(|s| s.to_physical(1.0).into())
@@ -61,6 +64,35 @@ impl Application {
             receiver: None,
             resized: None,
         }
+    }
+}
+
+pub struct ApplicationRunner {
+    event_loop: EventLoop<ApplicationEvent>,
+    app: Application,
+}
+
+impl ApplicationRunner {
+    pub fn new(window_attributes: WindowAttributes) -> Self {
+        let mut event_loop = EventLoop::<ApplicationEvent>::with_user_event();
+        #[cfg(not(target_arch = "wasm32"))]
+        let event_loop = event_loop.with_any_thread(true);
+        let event_loop = event_loop.build().unwrap();
+        let event_loop_proxy = event_loop.create_proxy();
+
+        let app = Application::new(window_attributes, event_loop_proxy);
+
+        Self { app, event_loop }
+    }
+
+    pub fn get_event_loop_proxy(&self) -> EventLoopProxy<ApplicationEvent> {
+        self.event_loop.create_proxy()
+    }
+
+    pub fn run(self) -> Result<(), EventLoopError> {
+        let mut app = self.app;
+        log::info!("running app");
+        self.event_loop.run_app(&mut app)
     }
 }
 
@@ -84,11 +116,17 @@ impl ApplicationHandler<ApplicationEvent> for Application {
         let initialize_engine = async move {
             match RenderEngine::new(window).await {
                 Ok(render_engine) => {
-                    let _ = sender.send(render_engine);
+                    if let Err(_) = sender.send(render_engine) {
+                        log::error!("Unable to use render engine: sender expired");
+                    }
                 }
                 Err(err) => {
                     log::error!("{err}");
-                    let _ = event_loop_proxy.send_event(ApplicationEvent::TerminateWithError(err));
+                    if let Err(err) =
+                        event_loop_proxy.send_event(ApplicationEvent::TerminateWithError(err))
+                    {
+                        log::error!("{err}");
+                    }
                 }
             }
         };
@@ -110,6 +148,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
             // wgpu engine gets initialized (e.g. in the browser)
             match event {
                 WindowEvent::Resized(physical_size) => {
+                    log::info!("Resized event before engine created");
                     self.resized = Some(physical_size);
                 }
                 _ => (),
@@ -119,14 +158,19 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                 match receiver.try_recv() {
                     Ok(Some(mut engine)) => {
                         if let Some(physical_size) = self.resized.take() {
+                            log::info!("Applying resize event obtained before engine got created");
                             self.surface_configured = engine.resize(physical_size, &mut self.data);
                             engine.window().request_redraw();
                         }
+                        log::info!("Received engine");
                         self.state = Some(engine);
-                        let _ = self
+                        if let Err(err) = self
                             .controllers
                             .ui_controller
-                            .change_location(GeoCoord::new(49.35135, 20.21139), &mut self.data);
+                            .change_location(GeoCoord::new(49.35135, 20.21139), &mut self.data)
+                        {
+                            log::error!("{err}");
+                        }
                     }
                     Ok(None) => {
                         log::debug!("No engine received at initialization");
@@ -142,6 +186,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
         if !self.controllers.input(&event) {
             match event {
                 WindowEvent::Resized(physical_size) => {
+                    log::info!("Resized event");
                     self.surface_configured = engine.resize(physical_size, &mut self.data);
                     // On macos the window needs to be redrawn manually after resizing
                     engine.window().request_redraw();
@@ -205,29 +250,18 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                     false
                 }
             }
+            ApplicationEvent::ChangeLocation(location) => {
+                if let Err(err) = self
+                    .controllers
+                    .ui_controller
+                    .change_location(location, &mut self.data)
+                {
+                    log::error!("{err}");
+                }
+                true
+            }
         };
 
         self.require_render = self.require_render || require_render;
     }
-}
-
-pub async fn run_app(window_attributes: WindowAttributes) -> Result<()> {
-    let callable = || {
-        let mut event_loop = EventLoop::<ApplicationEvent>::with_user_event();
-        #[cfg(not(target_arch = "wasm32"))]
-        let event_loop = event_loop.with_any_thread(true);
-        let event_loop = event_loop.build().unwrap();
-        let event_loop_proxy = event_loop.create_proxy();
-
-        let mut app = Application::new(window_attributes, event_loop_proxy);
-
-        event_loop.run_app(&mut app)
-    };
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let result = Ok(tokio::task::spawn_blocking(callable).await??);
-    #[cfg(target_arch = "wasm32")]
-    let result = Ok(callable()?);
-
-    result
 }

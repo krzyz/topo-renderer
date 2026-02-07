@@ -7,7 +7,7 @@ use tokio::{
     sync::mpsc::{Sender, channel},
     task::JoinHandle,
 };
-use tokio_with_wasm::alias as tokio;
+use tokio_with_wasm::{alias as tokio, sync::broadcast::Receiver};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 use winit::{
@@ -18,7 +18,7 @@ use winit::{
 use crate::{
     app::ApplicationEvent,
     control::{
-        background_runner::{BackgroundEvent, BackgroundRunner},
+        background_runner::{BackgroundEvent, BackgroundNotification, BackgroundRunner},
         camera_controller::CameraController,
         ui_controller::UiController,
     },
@@ -27,7 +27,10 @@ use crate::{
 
 pub enum RunnerState {
     Initialized(BackgroundRunner),
-    Started(JoinHandle<()>),
+    Started {
+        handle: JoinHandle<()>,
+        notification_receiver: Receiver<BackgroundNotification>,
+    },
 }
 
 pub struct ApplicationControllers {
@@ -63,11 +66,27 @@ impl ApplicationControllers {
         ) -> JoinHandle<()>,
     ) -> Result<(), Report> {
         if let Some(RunnerState::Initialized(mut runner)) = self.runner_state.take() {
+            let notification_receiver = runner.get_notification_receiver();
             let pinned = Box::pin(async move { runner.run().await });
-            self.runner_state = Some(RunnerState::Started(async_runner(pinned)));
+            self.runner_state = Some(RunnerState::Started {
+                handle: async_runner(pinned),
+                notification_receiver,
+            });
         }
 
         Ok(())
+    }
+
+    pub fn subscribe_to_notifications(&self) -> Option<Receiver<BackgroundNotification>> {
+        if let Some(RunnerState::Started {
+            notification_receiver,
+            ..
+        }) = &self.runner_state
+        {
+            Some(notification_receiver.resubscribe())
+        } else {
+            None
+        }
     }
 
     pub fn send_event(&mut self, event: BackgroundEvent) -> Result<()> {
@@ -97,7 +116,7 @@ impl ApplicationControllers {
 
 impl Drop for ApplicationControllers {
     fn drop(&mut self) {
-        if let Some(RunnerState::Started(handle)) = &mut self.runner_state {
+        if let Some(RunnerState::Started { handle, .. }) = &mut self.runner_state {
             handle.abort();
         }
     }

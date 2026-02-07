@@ -1,10 +1,14 @@
 use std::io::Cursor;
 
 use bytes::Bytes;
-use color_eyre::{Report, Result, eyre::OptionExt};
+use color_eyre::{
+    Report, Result,
+    eyre::{Context, OptionExt},
+};
 use geotiff::GeoTiff;
 use tokio::{
     select,
+    sync::broadcast,
     sync::mpsc::Receiver,
     task::{JoinSet, spawn_blocking},
 };
@@ -17,12 +21,35 @@ use crate::{
     render::{render_buffer::RenderBuffer, render_engine::RenderEvent},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BackgroundEvent {
     DataRequested {
         requested: GeoLocation,
         current_location: GeoCoord,
     },
+}
+
+impl BackgroundEvent {
+    pub fn to_task_info(self, running_tasks_left: usize) -> TaskInfo {
+        TaskInfo {
+            task: self,
+            running_tasks_left,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TaskInfo {
+    pub task: BackgroundEvent,
+    pub running_tasks_left: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum BackgroundNotification {
+    TaskStarted(TaskInfo),
+    TaskFinished(TaskInfo),
+    TaskErrored { task: TaskInfo, error: String },
+    JoinError(String),
 }
 
 /// This handles async operations of the application
@@ -31,7 +58,8 @@ pub enum BackgroundEvent {
 pub struct BackgroundRunner {
     event_receiver: Receiver<BackgroundEvent>,
     render_event_loopback: EventLoopProxy<ApplicationEvent>,
-    running_tasks: JoinSet<Result<()>>,
+    running_tasks: JoinSet<(BackgroundEvent, Result<()>)>,
+    notification_broadcaster: broadcast::Sender<BackgroundNotification>,
 }
 
 pub async fn fetch_terrain(location: GeoLocation) -> Result<Option<GeoTiff>> {
@@ -44,13 +72,13 @@ pub async fn fetch_terrain(location: GeoLocation) -> Result<Option<GeoTiff>> {
 }
 
 async fn get_tiff_from_http(backend_url: &str, location: GeoLocation) -> Result<Option<Bytes>> {
-    let response = reqwest::get(format!(
-        "{backend_url}/dem?{}",
-        location.to_request_params()
-    ))
-    .await?
-    .bytes()
-    .await?;
+    let url = format!("{backend_url}/dem?{}", location.to_request_params());
+    let response = reqwest::get(&url)
+        .await
+        .wrap_err_with(|| format!("Error trying to fetch from {}", &url))?
+        .bytes()
+        .await
+        .wrap_err_with(|| format!("Error decoding response from {}", &url))?;
     if response.len() > 0 {
         Ok(Some(response))
     } else {
@@ -63,10 +91,12 @@ impl BackgroundRunner {
         event_receiver: Receiver<BackgroundEvent>,
         render_event_loopback: EventLoopProxy<ApplicationEvent>,
     ) -> Self {
+        let (notification_broadcaster, _notification_subscriber) = broadcast::channel(128);
         Self {
             event_receiver,
             render_event_loopback,
             running_tasks: JoinSet::new(),
+            notification_broadcaster,
         }
     }
 
@@ -125,21 +155,38 @@ impl BackgroundRunner {
 
     pub async fn run(&mut self) {
         loop {
-            select! {
+            let notification = select! {
                 Some(event) = self.event_receiver.recv() => {
                     let sender = self.render_event_loopback.clone();
-                    self.running_tasks.spawn(async {
-                        Ok(Self::process_event(sender, event).await?)
+                    self.running_tasks.spawn(async move {
+                        (event, Self::process_event(sender, event).await)
                     });
-                    log::info!("Background tasks running: {}", self.running_tasks.len());
+                        BackgroundNotification::TaskStarted(event.to_task_info(self.running_tasks.len()))
                 }
                 Some(result) = self.running_tasks.join_next() => {
-                    if let Err(err) = result {
-                        log::error!("Error in a background task: {err:?}");
+                    match result {
+                        Ok((event, task_result)) => {
+                            let task = event.to_task_info(self.running_tasks.len());
+                            match task_result {
+                                Ok(()) => BackgroundNotification::TaskFinished(task),
+                                Err(err) => BackgroundNotification::TaskErrored {
+                                    task,
+                                    error: format!("{err:}")
+                                },
+                            }
+                        }
+                        Err(err) => {
+                            log::error!("Error joining task: {err:?}");
+                            BackgroundNotification::JoinError(format!("{err:}"))
+                        }
                     }
-                    log::info!("Task finished, still running: {}", self.running_tasks.len());
                 }
-            }
+            };
+            let _ = self.notification_broadcaster.send(notification);
         }
+    }
+
+    pub fn get_notification_receiver(&self) -> broadcast::Receiver<BackgroundNotification> {
+        self.notification_broadcaster.subscribe()
     }
 }

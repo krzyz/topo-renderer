@@ -3,7 +3,7 @@ use std::{pin::Pin, sync::Arc};
 use color_eyre::Report;
 use futures::channel::oneshot;
 use tokio::task::JoinHandle;
-use tokio_with_wasm::alias as tokio;
+use tokio_with_wasm::{alias as tokio, sync::broadcast::Receiver};
 use topo_common::GeoCoord;
 use winit::{
     application::ApplicationHandler,
@@ -14,11 +14,10 @@ use winit::{
     window::WindowAttributes,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use winit::platform::wayland::EventLoopBuilderExtWayland;
-
 use crate::{
-    control::application_controllers::ApplicationControllers,
+    control::{
+        application_controllers::ApplicationControllers, background_runner::BackgroundNotification,
+    },
     data::application_data::ApplicationData,
     render::render_engine::{RenderEngine, RenderEvent},
 };
@@ -76,8 +75,6 @@ pub struct ApplicationRunner {
 impl ApplicationRunner {
     pub fn new(window_attributes: WindowAttributes) -> Self {
         let mut event_loop = EventLoop::<ApplicationEvent>::with_user_event();
-        #[cfg(not(target_arch = "wasm32"))]
-        let event_loop = event_loop.with_any_thread(true);
         let event_loop = event_loop.build().unwrap();
         let event_loop_proxy = event_loop.create_proxy();
 
@@ -97,6 +94,12 @@ impl ApplicationRunner {
         self.app
             .controllers
             .configure_background_runner(async_runner)
+    }
+
+    pub fn subscribe_to_background_notifications(
+        &mut self,
+    ) -> Option<Receiver<BackgroundNotification>> {
+        self.app.controllers.subscribe_to_notifications()
     }
 
     pub fn run(self) -> Result<(), EventLoopError> {
@@ -174,6 +177,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                             engine.window().request_redraw();
                         }
                         self.engine = Some(engine);
+                        self.require_render = true;
                         if let Some(engine) = self.engine.as_mut() {
                             if let Err(err) = self.controllers.ui_controller.change_location(
                                 GeoCoord::new(49.35135, 20.21139),
@@ -199,6 +203,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
             match event {
                 WindowEvent::Resized(physical_size) => {
                     self.surface_configured = engine.resize(physical_size, &mut self.data);
+                    self.require_render = true;
                     // On macos the window needs to be redrawn manually after resizing
                     engine.window().request_redraw();
                 }

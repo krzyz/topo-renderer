@@ -1250,15 +1250,6 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.30.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19fc433e8437a212d1b6f1e68c7824af3aed907da60afa994e7f542d18d12aa9"
-dependencies = [
- "bytemuck",
-]
-
-[[package]]
-name = "glam"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74a4d85559e2637d3d839438b5b3d75c31e655276f9544d72475c36b92fabbed"
@@ -3673,40 +3664,16 @@ dependencies = [
 
 [[package]]
 name = "tokio_with_wasm"
-version = "0.8.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dfba9b946459940fb564dcf576631074cdfb0bfe4c962acd4c31f0dca7897e6"
-dependencies = [
- "js-sys",
- "tokio",
- "tokio_with_wasm_proc 0.8.7",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "tokio_with_wasm"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef3ce6a8f5b5190dfe4851db6c969e8360a262759e16a0b75dfc43af19d97a86"
 dependencies = [
  "js-sys",
  "tokio",
- "tokio_with_wasm_proc 0.9.0",
+ "tokio_with_wasm_proc",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "tokio_with_wasm_proc"
-version = "0.8.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37e04c1865c281139e5ccf633cb9f76ffdaabeebfe53b703984cf82878e2aabb"
-dependencies = [
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -3795,20 +3762,17 @@ dependencies = [
 
 [[package]]
 name = "topo-renderer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "approx",
  "bytemuck",
  "bytes",
  "color-eyre",
  "config",
- "console_error_panic_hook",
- "console_log",
  "csv",
- "env_logger",
  "futures",
  "geotiff",
- "glam 0.30.10",
+ "glam",
  "glyphon",
  "itertools",
  "log",
@@ -3818,11 +3782,8 @@ dependencies = [
  "serde",
  "strum",
  "tokio",
- "tokio_with_wasm 0.8.7",
+ "tokio_with_wasm",
  "topo-common",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
  "web-time",
  "wgpu",
  "winit",
@@ -3836,37 +3797,8 @@ dependencies = [
  "env_logger",
  "log",
  "tokio",
- "tokio_with_wasm 0.9.0",
- "topo-renderer-new",
- "winit",
-]
-
-[[package]]
-name = "topo-renderer-new"
-version = "0.1.0"
-dependencies = [
- "approx",
- "bytemuck",
- "bytes",
- "color-eyre",
- "config",
- "csv",
- "futures",
- "geotiff",
- "glam 0.31.0",
- "glyphon",
- "itertools",
- "log",
- "lyon",
- "reqwest",
- "rstest",
- "serde",
- "strum",
- "tokio",
- "tokio_with_wasm 0.9.0",
- "topo-common",
- "web-time",
- "wgpu",
+ "tokio_with_wasm",
+ "topo-renderer",
  "winit",
 ]
 
@@ -3878,9 +3810,9 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "log",
- "tokio_with_wasm 0.9.0",
+ "tokio_with_wasm",
  "topo-common",
- "topo-renderer-new",
+ "topo-renderer",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",

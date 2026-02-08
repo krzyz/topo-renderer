@@ -3,7 +3,7 @@ mod js;
 use std::cell::OnceCell;
 
 use topo_common::GeoCoord;
-use topo_renderer_new::{
+use topo_renderer::{
     app::{ApplicationEvent, ApplicationRunner},
     control::background_runner::BackgroundNotification,
 };

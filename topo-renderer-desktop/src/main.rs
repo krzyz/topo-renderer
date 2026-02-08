@@ -1,7 +1,7 @@
 use color_eyre::{Report, Result};
 use tokio::runtime::Runtime;
 use tokio_with_wasm::alias as tokio;
-use topo_renderer_new::app::ApplicationRunner;
+use topo_renderer::app::ApplicationRunner;
 use winit::window::Window;
 
 pub fn main() -> Result<()> {

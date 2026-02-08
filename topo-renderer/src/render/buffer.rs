@@ -1,8 +1,6 @@
-use std::sync::mpsc::Sender;
+use winit::event_loop::EventLoopProxy;
 
-use crate::render::state::Message;
-
-use super::state::DepthState;
+use crate::{app::ApplicationEvent, data::DepthState};
 
 // A custom buffer container for dynamic resizing.
 pub struct Buffer {
@@ -54,12 +52,16 @@ impl Buffer {
         }
     }
 
-    pub fn map(&mut self, sender: Sender<Message>, new_depth_state: DepthState) -> bool {
+    pub fn map(
+        &mut self,
+        sender: EventLoopProxy<ApplicationEvent>,
+        new_depth_state: DepthState,
+    ) -> bool {
         if !self.mapped {
             self.raw.slice(..).map_async(wgpu::MapMode::Read, move |_| {
-                sender
-                    .send(Message::DepthBufferReady(new_depth_state))
-                    .expect("Unable to send depth buffer ready message");
+                let _ = sender.send_event(ApplicationEvent::RenderEvent(
+                    super::render_engine::RenderEvent::DepthBufferReady(new_depth_state),
+                ));
             });
             self.mapped = true;
             true

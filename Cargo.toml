@@ -4,7 +4,6 @@ members = [
   "topo-common",
   "topo-renderer",
   "topo-renderer-desktop",
-  "topo-renderer-new",
   "topo-renderer-web",
 ]
 resolver = "3"

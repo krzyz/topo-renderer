@@ -1,7 +1,5 @@
-use crate::render::data::PostprocessingUniforms;
-
 use super::{
-    data::{Uniforms, Vertex},
+    data::{PostprocessingUniforms, Uniforms, Vertex},
     texture::Texture,
 };
 

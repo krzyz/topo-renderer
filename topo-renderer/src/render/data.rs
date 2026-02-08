@@ -1,12 +1,12 @@
-use crate::common::data::Size;
+use glam::{Mat4, Vec3, Vec4};
 
-use super::camera::Camera;
+use crate::data::{Size, camera::Camera};
 
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
-    pub position: glam::Vec3,
-    pub normal: glam::Vec3,
+    pub position: Vec3,
+    pub normal: Vec3,
 }
 
 impl Vertex {
@@ -17,7 +17,7 @@ impl Vertex {
         1 => Float32x3
     ];
 
-    pub fn new(position: glam::Vec3, normal: glam::Vec3) -> Self {
+    pub fn new(position: Vec3, normal: Vec3) -> Self {
         Self { position, normal }
     }
 
@@ -33,10 +33,10 @@ impl Vertex {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Uniforms {
-    camera_proj: glam::Mat4,
-    normal_proj: glam::Mat4,
-    camera_pos: glam::Vec4,
-    pub sun_direction: glam::Vec3,
+    camera_proj: Mat4,
+    normal_proj: Mat4,
+    camera_pos: Vec4,
+    pub sun_direction: Vec3,
     pub view_mode: i32,
 }
 
@@ -90,5 +90,22 @@ impl PostprocessingUniforms {
 
     pub fn with_new_viewport(&self, viewport: Size<f32>) -> Self {
         PostprocessingUniforms::new(viewport, self.pixelize_n)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PeakInstance {
+    pub position: Vec3,
+    pub name: String,
+    pub visible: bool,
+}
+
+impl PeakInstance {
+    pub fn new(position: Vec3, name: String) -> Self {
+        Self {
+            position,
+            name,
+            visible: false,
+        }
     }
 }

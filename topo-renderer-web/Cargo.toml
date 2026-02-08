@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 default = ["console_error_panic_hook"]
 
 [dependencies]
-topo-renderer-new = { path = "../topo-renderer-new" }
+topo-renderer = { path = "../topo-renderer" }
 topo-common = { path = "../topo-common" }
 
 color-eyre = { workspace = true }

@@ -1,6 +1,6 @@
-use std::pin::Pin;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+use std::{pin::Pin, sync::Arc};
 
 use color_eyre::{Report, Result};
 use tokio::{sync::broadcast::Receiver, task::JoinHandle};
@@ -13,7 +13,7 @@ use winit::{
 };
 
 use crate::{
-    app::ApplicationEvent,
+    app::{ApplicationEvent, ApplicationSettings},
     control::{
         background_runner::{BackgroundEvent, BackgroundNotification, BackgroundRunner},
         camera_controller::CameraController,
@@ -43,10 +43,13 @@ pub struct ApplicationControllers {
 }
 
 impl ApplicationControllers {
-    pub fn new(render_event_loopback: EventLoopProxy<ApplicationEvent>) -> Self {
+    pub fn new(
+        render_event_loopback: EventLoopProxy<ApplicationEvent>,
+        settings: Arc<ApplicationSettings>,
+    ) -> Self {
         let (event_sender, event_receiver) = tokio::sync::mpsc::channel(128);
 
-        let runner = BackgroundRunner::new(event_receiver, render_event_loopback);
+        let runner = BackgroundRunner::new(event_receiver, render_event_loopback, settings);
 
         let ui_controller = UiController::new(event_sender.clone());
         let camera_controller = CameraController::new(0.01);

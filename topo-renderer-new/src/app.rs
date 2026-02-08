@@ -25,6 +25,11 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone)]
+pub struct ApplicationSettings {
+    pub backend_url: String,
+}
+
 pub enum ApplicationEvent {
     TerminateWithError(Report),
     ChangeLocation(GeoCoord),
@@ -50,7 +55,12 @@ impl Application {
         window_attributes: WindowAttributes,
         event_loop_proxy: EventLoopProxy<ApplicationEvent>,
     ) -> Self {
-        let controllers = ApplicationControllers::new(event_loop_proxy.clone());
+        let settings = Arc::new(ApplicationSettings {
+            backend_url: env!("TOPO_backend_url").to_string(),
+        });
+
+        let controllers =
+            ApplicationControllers::new(event_loop_proxy.clone(), Arc::clone(&settings));
 
         let bounds = window_attributes
             .inner_size

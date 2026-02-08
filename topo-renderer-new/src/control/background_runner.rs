@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{io::Cursor, sync::Arc};
 
 use bytes::{Buf, Bytes};
 use color_eyre::{
@@ -18,7 +18,7 @@ use topo_common::{GeoCoord, GeoLocation};
 use winit::event_loop::EventLoopProxy;
 
 use crate::{
-    app::ApplicationEvent,
+    app::{ApplicationEvent, ApplicationSettings},
     data::peak::Peak,
     render::{
         data::PeakInstance, geometry::transform, render_buffer::RenderBuffer,
@@ -61,19 +61,20 @@ pub enum BackgroundNotification {
 /// which includes non-gpu long cpu-bound tasks done in the background
 #[derive(Debug)]
 pub struct BackgroundRunner {
+    settings: Arc<ApplicationSettings>,
     event_receiver: Receiver<BackgroundEvent>,
     render_event_loopback: EventLoopProxy<ApplicationEvent>,
-    running_tasks: JoinSet<(BackgroundEvent, Result<()>)>,
     notification_broadcaster: broadcast::Sender<BackgroundNotification>,
+    running_tasks: JoinSet<(BackgroundEvent, Result<()>)>,
 }
 
-pub async fn fetch_terrain(location: GeoLocation) -> Result<Option<(GeoTiff, Vec<PeakInstance>)>> {
-    let var_name = "http://localhost:3333";
-    let backend_url = var_name;
-
+pub async fn fetch_terrain(
+    location: GeoLocation,
+    settings: &ApplicationSettings,
+) -> Result<Option<(GeoTiff, Vec<PeakInstance>)>> {
     let (tiff_bytes, peaks_bytes) = join!(
-        get_tiff_from_http(backend_url, location),
-        get_peaks_from_http(backend_url, location),
+        get_tiff_from_http(settings.backend_url.as_str(), location),
+        get_peaks_from_http(settings.backend_url.as_str(), location),
     );
 
     let geotiff = tiff_bytes?
@@ -141,9 +142,11 @@ impl BackgroundRunner {
     pub fn new(
         event_receiver: Receiver<BackgroundEvent>,
         render_event_loopback: EventLoopProxy<ApplicationEvent>,
+        settings: Arc<ApplicationSettings>,
     ) -> Self {
         let (notification_broadcaster, _notification_subscriber) = broadcast::channel(128);
         Self {
+            settings,
             event_receiver,
             render_event_loopback,
             running_tasks: JoinSet::new(),
@@ -154,6 +157,7 @@ impl BackgroundRunner {
     pub async fn process_event(
         render_event_loopback: EventLoopProxy<ApplicationEvent>,
         event: BackgroundEvent,
+        settings: Arc<ApplicationSettings>,
     ) -> Result<()> {
         use BackgroundEvent::*;
 
@@ -162,7 +166,7 @@ impl BackgroundRunner {
                 requested,
                 current_location,
             } => {
-                let (terrain, peaks) = fetch_terrain(requested).await?.unzip();
+                let (terrain, peaks) = fetch_terrain(requested, &settings).await?.unzip();
 
                 if let Some(peaks) = peaks.clone() {
                     let _ = render_event_loopback
@@ -230,8 +234,9 @@ impl BackgroundRunner {
             let notification = select! {
                 Some(event) = self.event_receiver.recv() => {
                     let sender = self.render_event_loopback.clone();
+                    let settings = Arc::clone(&self.settings);
                     self.running_tasks.spawn(async move {
-                        (event, Self::process_event(sender, event).await)
+                        (event, Self::process_event(sender, event, settings).await)
                     });
                         BackgroundNotification::TaskStarted(event.to_task_info(self.running_tasks.len()))
                 }

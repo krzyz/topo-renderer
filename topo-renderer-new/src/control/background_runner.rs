@@ -1,10 +1,11 @@
-use std::{io::Cursor, sync::Arc};
+use std::{collections::BTreeMap, fmt::Display, io::Cursor, sync::Arc};
 
 use bytes::{Buf, Bytes};
 use color_eyre::{
     Report, Result,
     eyre::{Context, OptionExt},
 };
+use futures::future::join_all;
 use geotiff::GeoTiff;
 use itertools::Itertools;
 use tokio::{
@@ -26,27 +27,53 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum BackgroundEvent {
     DataRequested {
         requested: GeoLocation,
         current_location: GeoCoord,
     },
+    LoadAdditionalFonts(BTreeMap<GeoLocation, Vec<PeakInstance>>),
 }
 
 impl BackgroundEvent {
-    pub fn to_task_info(self, running_tasks_left: usize) -> TaskInfo {
+    pub fn to_task_info(&self, running_tasks_left: usize) -> TaskInfo {
         TaskInfo {
-            task: self,
+            task: format!("{self}"),
             running_tasks_left,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Display for BackgroundEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BackgroundEvent::DataRequested {
+                requested,
+                current_location,
+            } => write!(
+                f,
+                "Data requested for location {:?}, current location: {:?}",
+                requested, current_location
+            ),
+            BackgroundEvent::LoadAdditionalFonts(_) => write!(f, "LoadAdditionalFonts"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct TaskInfo {
-    pub task: BackgroundEvent,
+    pub task: String,
     pub running_tasks_left: usize,
+}
+
+impl TaskInfo {
+    pub fn new(task: String, running_tasks_left: usize) -> Self {
+        Self {
+            task,
+            running_tasks_left,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +92,7 @@ pub struct BackgroundRunner {
     event_receiver: Receiver<BackgroundEvent>,
     render_event_loopback: EventLoopProxy<ApplicationEvent>,
     notification_broadcaster: broadcast::Sender<BackgroundNotification>,
-    running_tasks: JoinSet<(BackgroundEvent, Result<()>)>,
+    running_tasks: JoinSet<(String, Result<()>)>,
 }
 
 pub async fn fetch_terrain(
@@ -226,6 +253,23 @@ impl BackgroundRunner {
 
                 Ok(())
             }
+            LoadAdditionalFonts(peaks) => {
+                let _ = TextRenderer::load_additional_fonts().await?;
+
+                let label_preparation_futures = peaks.into_iter().map(|(location, peaks)| {
+                    let render_event_loopback = render_event_loopback.clone();
+                    let prepare_peak_labels = move || {
+                        let labels = TextRenderer::prepare_peak_labels(&peaks);
+                        let _ = render_event_loopback
+                            .send_event(ApplicationEvent::PeakLabelsReady((location, labels)));
+                    };
+                    tokio::task::spawn_blocking(prepare_peak_labels)
+                });
+
+                join_all(label_preparation_futures).await;
+
+                Ok(())
+            }
         }
     }
 
@@ -235,15 +279,19 @@ impl BackgroundRunner {
                 Some(event) = self.event_receiver.recv() => {
                     let sender = self.render_event_loopback.clone();
                     let settings = Arc::clone(&self.settings);
+                    let event_name = format!("{event}");
+                    {
+                        let event_name = event_name.clone();
                     self.running_tasks.spawn(async move {
-                        (event, Self::process_event(sender, event, settings).await)
+                        (event_name, Self::process_event(sender, event, settings).await)
                     });
-                        BackgroundNotification::TaskStarted(event.to_task_info(self.running_tasks.len()))
+                    }
+                    BackgroundNotification::TaskStarted(TaskInfo::new(event_name, self.running_tasks.len()))
                 }
                 Some(result) = self.running_tasks.join_next() => {
                     match result {
                         Ok((event, task_result)) => {
-                            let task = event.to_task_info(self.running_tasks.len());
+                            let task = TaskInfo::new(event, self.running_tasks.len());
                             match task_result {
                                 Ok(()) => BackgroundNotification::TaskFinished(task),
                                 Err(err) => BackgroundNotification::TaskErrored {

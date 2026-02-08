@@ -20,7 +20,7 @@ use crate::js::push_notification;
 
 thread_local! {
     pub static EVENT_LOOP_PROXY: OnceCell<EventLoopProxy<ApplicationEvent>> = OnceCell::new();
-    //pub static ADDITIONAL_FONTS_LOADED: RefCell<bool> = RefCell::new(false);
+    pub static ADDITIONAL_FONTS_LOADED: OnceCell<()> = OnceCell::new();
 }
 
 #[wasm_bindgen]
@@ -38,21 +38,14 @@ pub fn set_location(latitude: f32, longitude: f32) {
 
 #[wasm_bindgen]
 pub fn load_fonts() {
-    // let mut loaded_before = false;
-    // ADDITIONAL_FONTS_LOADED.with_borrow_mut(|loaded| {
-    //     loaded_before = *loaded;
-    //     *loaded = true
-    // });
-
-    // if !loaded_before {
-    //     EVENT_LOOP_PROXY.with_borrow_mut(|proxy| {
-    //         if let Some(proxy) = proxy {
-    //             proxy
-    //                 .send_event(UserEvent::StateEvent(StateEvent::LoadAdditionalFonts))
-    //                 .unwrap();
-    //         }
-    //     })
-    // }
+    ADDITIONAL_FONTS_LOADED.with(|cell| {
+        EVENT_LOOP_PROXY.with(|cell| {
+            if let Some(proxy) = cell.get() {
+                let _ = proxy.send_event(ApplicationEvent::LoadAdditionalFonts);
+            }
+        });
+        let _ = cell.set(());
+    });
 }
 
 #[tokio::main(flavor = "multi_thread")]

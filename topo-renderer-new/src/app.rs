@@ -16,7 +16,8 @@ use winit::{
 
 use crate::{
     control::{
-        application_controllers::ApplicationControllers, background_runner::BackgroundNotification,
+        application_controllers::ApplicationControllers,
+        background_runner::{BackgroundEvent, BackgroundNotification},
     },
     data::application_data::{ApplicationData, PeakLabel},
     render::{
@@ -36,6 +37,7 @@ pub enum ApplicationEvent {
     PeaksReady((GeoLocation, Vec<PeakInstance>)),
     PeakLabelsReady((GeoLocation, Vec<PeakLabel>)),
     RenderEvent(RenderEvent),
+    LoadAdditionalFonts,
 }
 
 pub struct Application {
@@ -300,6 +302,14 @@ impl ApplicationHandler<ApplicationEvent> for Application {
             ApplicationEvent::PeakLabelsReady((location, labels)) => {
                 self.data.peak_labels.insert(location, labels);
                 true
+            }
+            ApplicationEvent::LoadAdditionalFonts => {
+                let _ = self
+                    .controllers
+                    .send_event(BackgroundEvent::LoadAdditionalFonts(
+                        self.data.peaks.clone(),
+                    ));
+                false
             }
         };
 

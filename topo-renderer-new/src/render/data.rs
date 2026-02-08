@@ -93,7 +93,7 @@ impl PostprocessingUniforms {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PeakInstance {
     pub position: Vec3,
     pub name: String,

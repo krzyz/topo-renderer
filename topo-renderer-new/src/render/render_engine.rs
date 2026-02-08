@@ -150,8 +150,9 @@ impl RenderEngine {
                 },
             );
 
-            // self.line_renderer
-            //     .update_resolution(self.config.width, self.config.height);
+            self.renderers
+                .line
+                .update_resolution(self.config.width, self.config.height);
 
             self.renderers.terrain.update(
                 &self.device,
@@ -183,7 +184,7 @@ impl RenderEngine {
     pub fn render(
         &mut self,
         data: &ApplicationData,
-    ) -> std::result::Result<(), wgpu::SurfaceError> {
+    ) -> std::result::Result<bool, wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.config.format),
@@ -203,13 +204,16 @@ impl RenderEngine {
                 .renderers
                 .terrain
                 .render(&view, &mut encoder, self.size.into());
+            self.renderers.line.render(&mut pass);
             self.renderers.text.render(&mut pass);
         }
 
+        let processed_depth_different_than_current = self
+            .depth_state
+            .is_none_or(|depth_state| depth_state != self.new_depth_state(data));
+
         if !self.renderers.terrain.get_depth_read_buffer().mapped
-            && (self
-                .depth_state
-                .is_none_or(|depth_state| depth_state != self.new_depth_state(data)))
+            && processed_depth_different_than_current
         {
             copying_depth_texture = true;
             let depth_texture = self
@@ -240,12 +244,12 @@ impl RenderEngine {
 
         self.queue.submit(Some(encoder.finish()));
         output.present();
+        self.renderers.text.atlas.trim();
 
         if copying_depth_texture {
             let event_loop_proxy = self.event_loop_proxy.clone();
             let new_depth_state = self.new_depth_state(data);
 
-            //#[cfg(not(target_arch = "wasm32"))]
             self.queue.on_submitted_work_done(move || {
                 event_loop_proxy
                     .send_event(ApplicationEvent::RenderEvent(RenderEvent::FrameFinished(
@@ -253,15 +257,9 @@ impl RenderEngine {
                     )))
                     .ok();
             });
-            // #[cfg(target_arch = "wasm32")]
-            // event_loop_proxy
-            //     .send_event(UserEvent::StateEvent(StateEvent::FrameFinished(
-            //         new_depth_state,
-            //     )))
-            //     .ok();
         }
 
-        Ok(())
+        Ok(processed_depth_different_than_current)
     }
 
     /// Returns whether scene changed and needs to be rerendered
@@ -288,6 +286,7 @@ impl RenderEngine {
                     );
 
                     self.depth_state = Some(depth_state);
+                    self.renderers.line.clear();
 
                     let visible_labels = Self::get_visible_labels(
                         &mut data.peaks,
@@ -297,9 +296,16 @@ impl RenderEngine {
                         &depth_buffer_view,
                     );
 
+                    let laid_out_labels = self.renderers.text.prepare(
+                        &self.device,
+                        &self.queue,
+                        visible_labels,
+                        data,
+                    );
+
                     self.renderers
-                        .text
-                        .prepare(&self.device, &self.queue, visible_labels, data);
+                        .line
+                        .prepare(&self.device, &self.queue, laid_out_labels);
                 }
                 self.renderers.terrain.get_depth_read_buffer_mut().unmap();
             }

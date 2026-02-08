@@ -2,7 +2,7 @@ use wgpu::TextureFormat;
 
 use crate::{
     data::Size,
-    render::{pipeline::Pipeline, text_renderer::TextRenderer},
+    render::{line_renderer::LineRenderer, pipeline::Pipeline, text_renderer::TextRenderer},
 };
 
 use super::terrain_renderer::TerrainRenderer;
@@ -10,6 +10,7 @@ use super::terrain_renderer::TerrainRenderer;
 pub struct ApplicationRenderers {
     pub terrain: TerrainRenderer,
     pub text: TextRenderer,
+    pub line: LineRenderer,
 }
 
 impl ApplicationRenderers {
@@ -21,12 +22,21 @@ impl ApplicationRenderers {
         target_size: Size<u32>,
     ) -> Self {
         let terrain = TerrainRenderer::new(device, format, target_size);
+
         let text = TextRenderer::new(
             device,
             queue,
             config,
             Pipeline::get_postprocessing_depth_stencil_state(),
         );
-        Self { terrain, text }
+
+        let mut line = LineRenderer::new(device, format);
+        line.prepare(device, queue, vec![]);
+
+        Self {
+            terrain,
+            text,
+            line,
+        }
     }
 }

@@ -59,14 +59,9 @@ impl Buffer {
     ) -> bool {
         if !self.mapped {
             self.raw.slice(..).map_async(wgpu::MapMode::Read, move |_| {
-                if sender
-                    .send_event(ApplicationEvent::RenderEvent(
-                        super::render_engine::RenderEvent::DepthBufferReady(new_depth_state),
-                    ))
-                    .is_err()
-                {
-                    log::error!("Unable to send depth buffer ready message");
-                }
+                let _ = sender.send_event(ApplicationEvent::RenderEvent(
+                    super::render_engine::RenderEvent::DepthBufferReady(new_depth_state),
+                ));
             });
             self.mapped = true;
             true

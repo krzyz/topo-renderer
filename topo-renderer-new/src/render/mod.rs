@@ -3,6 +3,7 @@ pub mod bound_texture_view;
 pub mod buffer;
 pub mod data;
 pub mod geometry;
+pub mod line_renderer;
 pub mod pipeline;
 pub mod render_buffer;
 pub mod render_engine;

@@ -221,7 +221,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                     if self.controllers.update(self.require_render, &mut self.data) {
                         engine.update(&mut self.data);
                         match engine.render(&self.data) {
-                            Ok(_) => {}
+                            Ok(require_render) => self.require_render = require_render,
                             // Reconfigure the surface if it's lost or outdated
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                                 self.surface_configured =
@@ -238,7 +238,6 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                                 log::warn!("Surface timeout")
                             }
                         }
-                        self.require_render = false;
                     }
                 }
                 WindowEvent::CloseRequested => event_loop.exit(),

@@ -1,3 +1,7 @@
+use winit::event_loop::EventLoopProxy;
+
+use crate::{app::ApplicationEvent, data::DepthState};
+
 // A custom buffer container for dynamic resizing.
 pub struct Buffer {
     pub raw: wgpu::Buffer,
@@ -48,13 +52,21 @@ impl Buffer {
         }
     }
 
-    /*
-    pub fn map(&mut self, sender: Sender<Message>, new_depth_state: DepthState) -> bool {
+    pub fn map(
+        &mut self,
+        sender: EventLoopProxy<ApplicationEvent>,
+        new_depth_state: DepthState,
+    ) -> bool {
         if !self.mapped {
             self.raw.slice(..).map_async(wgpu::MapMode::Read, move |_| {
-                sender
-                    .send(Message::DepthBufferReady(new_depth_state))
-                    .expect("Unable to send depth buffer ready message");
+                if sender
+                    .send_event(ApplicationEvent::RenderEvent(
+                        super::render_engine::RenderEvent::DepthBufferReady(new_depth_state),
+                    ))
+                    .is_err()
+                {
+                    log::error!("Unable to send depth buffer ready message");
+                }
             });
             self.mapped = true;
             true
@@ -62,7 +74,6 @@ impl Buffer {
             false
         }
     }
-    */
 }
 
 impl Drop for Buffer {

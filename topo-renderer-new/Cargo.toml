@@ -19,9 +19,16 @@ tokio_with_wasm = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }
 geotiff = "0.1.0"
+serde.workspace = true
+approx = "0.5.1"
+csv = "1.4.0"
+glyphon = "0.10.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-time = "1.0.1"
+
+[dev-dependencies]
+rstest = "0.26.1"

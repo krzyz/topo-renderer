@@ -61,6 +61,18 @@ impl TerrainRenderer {
         }
     }
 
+    pub fn get_texture_view(&self) -> &BoundTextureView {
+        &self.texture_view
+    }
+
+    pub fn get_depth_read_buffer(&self) -> &Buffer {
+        &self.depth_read_buffer
+    }
+
+    pub fn get_depth_read_buffer_mut(&mut self) -> &mut Buffer {
+        &mut self.depth_read_buffer
+    }
+
     fn create_texture_view(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,

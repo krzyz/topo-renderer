@@ -3845,15 +3845,19 @@ dependencies = [
 name = "topo-renderer-new"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "bytemuck",
  "bytes",
  "color-eyre",
+ "csv",
  "futures",
  "geotiff",
  "glam 0.31.0",
+ "glyphon",
  "itertools",
  "log",
  "reqwest",
+ "serde",
  "strum",
  "tokio",
  "tokio_with_wasm 0.9.0",

@@ -1,16 +1,32 @@
 use wgpu::TextureFormat;
 
-use crate::data::Size;
+use crate::{
+    data::Size,
+    render::{pipeline::Pipeline, text_renderer::TextRenderer},
+};
 
 use super::terrain_renderer::TerrainRenderer;
 
 pub struct ApplicationRenderers {
     pub terrain: TerrainRenderer,
+    pub text: TextRenderer,
 }
 
 impl ApplicationRenderers {
-    pub fn new(device: &wgpu::Device, format: TextureFormat, target_size: Size<u32>) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        config: &wgpu::SurfaceConfiguration,
+        format: TextureFormat,
+        target_size: Size<u32>,
+    ) -> Self {
         let terrain = TerrainRenderer::new(device, format, target_size);
-        Self { terrain }
+        let text = TextRenderer::new(
+            device,
+            queue,
+            config,
+            Pipeline::get_postprocessing_depth_stencil_state(),
+        );
+        Self { terrain, text }
     }
 }

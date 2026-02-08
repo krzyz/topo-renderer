@@ -1,13 +1,14 @@
 use std::io::Cursor;
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use color_eyre::{
     Report, Result,
     eyre::{Context, OptionExt},
 };
 use geotiff::GeoTiff;
+use itertools::Itertools;
 use tokio::{
-    select,
+    join, select,
     sync::broadcast,
     sync::mpsc::Receiver,
     task::{JoinSet, spawn_blocking},
@@ -18,7 +19,11 @@ use winit::event_loop::EventLoopProxy;
 
 use crate::{
     app::ApplicationEvent,
-    render::{render_buffer::RenderBuffer, render_engine::RenderEvent},
+    data::peak::Peak,
+    render::{
+        data::PeakInstance, geometry::transform, render_buffer::RenderBuffer,
+        render_engine::RenderEvent, text_renderer::TextRenderer,
+    },
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -62,13 +67,43 @@ pub struct BackgroundRunner {
     notification_broadcaster: broadcast::Sender<BackgroundNotification>,
 }
 
-pub async fn fetch_terrain(location: GeoLocation) -> Result<Option<GeoTiff>> {
-    let backend_url = "http://localhost:3333";
+pub async fn fetch_terrain(location: GeoLocation) -> Result<Option<(GeoTiff, Vec<PeakInstance>)>> {
+    let var_name = "http://localhost:3333";
+    let backend_url = var_name;
 
-    Ok(get_tiff_from_http(backend_url, location)
-        .await?
+    let (tiff_bytes, peaks_bytes) = join!(
+        get_tiff_from_http(backend_url, location),
+        get_peaks_from_http(backend_url, location),
+    );
+
+    let geotiff = tiff_bytes?
         .map(|response| GeoTiff::read(Cursor::new(response)))
-        .transpose()?)
+        .transpose()?;
+
+    let peaks = peaks_bytes?
+        .map(|response| Peak::read_peaks(response.reader()))
+        .transpose()?;
+
+    let peaks = geotiff.as_ref().and_then(|geotiff| {
+        peaks.map(|peaks| {
+            peaks
+                .into_iter()
+                .sorted_by(|a, b| {
+                    PartialOrd::partial_cmp(&b.elevation, &a.elevation)
+                        .unwrap_or(std::cmp::Ordering::Less)
+                })
+                .filter_map(|p| {
+                    geotiff
+                        .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
+                        .map(|h: f32| {
+                            PeakInstance::new(transform(h + 10.0, p.latitude, p.longitude), p.name)
+                        })
+                })
+                .collect::<Vec<_>>()
+        })
+    });
+
+    Ok(geotiff.zip(peaks))
 }
 
 async fn get_tiff_from_http(backend_url: &str, location: GeoLocation) -> Result<Option<Bytes>> {
@@ -79,6 +114,22 @@ async fn get_tiff_from_http(backend_url: &str, location: GeoLocation) -> Result<
         .bytes()
         .await
         .wrap_err_with(|| format!("Error decoding response from {}", &url))?;
+    if response.len() > 0 {
+        Ok(Some(response))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn get_peaks_from_http(backend_url: &str, location: GeoLocation) -> Result<Option<Bytes>> {
+    let url = format!("{backend_url}/peaks?{}", location.to_request_params());
+    let response = reqwest::get(&url)
+        .await
+        .wrap_err_with(|| format!("Error trying to fetch from {}", &url))?
+        .bytes()
+        .await
+        .wrap_err_with(|| format!("Error decoding response from {}", &url))?;
+
     if response.len() > 0 {
         Ok(Some(response))
     } else {
@@ -111,7 +162,13 @@ impl BackgroundRunner {
                 requested,
                 current_location,
             } => {
-                let terrain = fetch_terrain(requested).await?;
+                let (terrain, peaks) = fetch_terrain(requested).await?.unzip();
+
+                if let Some(peaks) = peaks.clone() {
+                    let _ = render_event_loopback
+                        .send_event(ApplicationEvent::PeaksReady((requested, peaks)));
+                }
+
                 let process_terrain = {
                     let render_event_loopback = render_event_loopback.clone();
                     move || {
@@ -132,7 +189,7 @@ impl BackgroundRunner {
                             }
                             RenderBuffer::process_terrain(&terrain)?
                         } else {
-                            log::info!("Processing empty terrain");
+                            log::debug!("Processing empty terrain");
                             RenderBuffer::process_empty_terrain(requested)?
                         };
 
@@ -140,13 +197,28 @@ impl BackgroundRunner {
                     }
                 };
 
-                let (vertices, indices) = spawn_blocking(process_terrain).await??;
+                let process_peaks = {
+                    let render_event_loopback = render_event_loopback.clone();
+                    move || {
+                        if let Some(peaks) = peaks {
+                            let labels = TextRenderer::prepare_peak_labels(&peaks);
+                            let _ = render_event_loopback
+                                .send_event(ApplicationEvent::PeakLabelsReady((requested, labels)));
+                        } else {
+                            // do nothing
+                        }
+                    }
+                };
 
-                if let Err(err) = render_event_loopback.send_event(ApplicationEvent::RenderEvent(
+                let (process_terrain_result, _) = join!(
+                    spawn_blocking(process_terrain),
+                    spawn_blocking(process_peaks)
+                );
+
+                let (vertices, indices) = process_terrain_result??;
+                let _ = render_event_loopback.send_event(ApplicationEvent::RenderEvent(
                     RenderEvent::TerrainReady(requested, vertices, indices),
-                )) {
-                    log::error!("{err}");
-                }
+                ));
 
                 Ok(())
             }

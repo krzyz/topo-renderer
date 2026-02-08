@@ -7,4 +7,5 @@ pub mod pipeline;
 pub mod render_buffer;
 pub mod render_engine;
 pub mod terrain_renderer;
+pub mod text_renderer;
 pub mod texture;

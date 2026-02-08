@@ -1,12 +1,17 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use glam::Vec3;
 use topo_common::{GeoCoord, GeoLocation};
 
 use crate::{
     data::{Size, camera::Camera},
-    render::data::{PostprocessingUniforms, Uniforms},
+    render::data::{PeakInstance, PostprocessingUniforms, Uniforms},
 };
+
+pub struct PeakLabel {
+    pub buffer: glyphon::Buffer,
+    pub width: f32,
+}
 
 pub struct ApplicationData {
     pub current_location: Option<GeoCoord>,
@@ -14,6 +19,8 @@ pub struct ApplicationData {
     pub camera: Camera,
     pub uniforms: Uniforms,
     pub postprocessing_uniforms: PostprocessingUniforms,
+    pub peaks: BTreeMap<GeoLocation, Vec<PeakInstance>>,
+    pub peak_labels: BTreeMap<GeoLocation, Vec<PeakLabel>>,
 }
 
 impl ApplicationData {
@@ -31,6 +38,8 @@ impl ApplicationData {
             camera,
             uniforms,
             postprocessing_uniforms,
+            peaks: BTreeMap::new(),
+            peak_labels: BTreeMap::new(),
         }
     }
 }

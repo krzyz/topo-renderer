@@ -3,11 +3,8 @@ use std::pin::Pin;
 use std::time::Instant;
 
 use color_eyre::{Report, Result};
-use tokio::{
-    sync::mpsc::{Sender, channel},
-    task::JoinHandle,
-};
-use tokio_with_wasm::{alias as tokio, sync::broadcast::Receiver};
+use tokio::{sync::broadcast::Receiver, task::JoinHandle};
+use tokio_with_wasm::alias as tokio;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 use winit::{
@@ -25,6 +22,10 @@ use crate::{
     data::application_data::ApplicationData,
 };
 
+pub enum ControllerEvent {
+    VisibleLabelsUpdate(),
+}
+
 pub enum RunnerState {
     Initialized(BackgroundRunner),
     Started {
@@ -35,7 +36,7 @@ pub enum RunnerState {
 
 pub struct ApplicationControllers {
     runner_state: Option<RunnerState>,
-    event_sender: Sender<BackgroundEvent>,
+    event_sender: tokio::sync::mpsc::Sender<BackgroundEvent>,
     pub ui_controller: UiController,
     pub camera_controller: CameraController,
     previous_instant: Instant,
@@ -43,7 +44,7 @@ pub struct ApplicationControllers {
 
 impl ApplicationControllers {
     pub fn new(render_event_loopback: EventLoopProxy<ApplicationEvent>) -> Self {
-        let (event_sender, event_receiver) = channel(128);
+        let (event_sender, event_receiver) = tokio::sync::mpsc::channel(128);
 
         let runner = BackgroundRunner::new(event_receiver, render_event_loopback);
 

@@ -2,9 +2,9 @@ use std::{pin::Pin, sync::Arc};
 
 use color_eyre::Report;
 use futures::channel::oneshot;
-use tokio::task::JoinHandle;
-use tokio_with_wasm::{alias as tokio, sync::broadcast::Receiver};
-use topo_common::GeoCoord;
+use tokio::{sync::broadcast::Receiver, task::JoinHandle};
+use tokio_with_wasm::alias as tokio;
+use topo_common::{GeoCoord, GeoLocation};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -18,13 +18,18 @@ use crate::{
     control::{
         application_controllers::ApplicationControllers, background_runner::BackgroundNotification,
     },
-    data::application_data::ApplicationData,
-    render::render_engine::{RenderEngine, RenderEvent},
+    data::application_data::{ApplicationData, PeakLabel},
+    render::{
+        data::PeakInstance,
+        render_engine::{RenderEngine, RenderEvent},
+    },
 };
 
 pub enum ApplicationEvent {
     TerminateWithError(Report),
     ChangeLocation(GeoCoord),
+    PeaksReady((GeoLocation, Vec<PeakInstance>)),
+    PeakLabelsReady((GeoLocation, Vec<PeakLabel>)),
     RenderEvent(RenderEvent),
 }
 
@@ -126,7 +131,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
         self.receiver = Some(receiver);
 
         let initialize_engine = async move {
-            match RenderEngine::new(window).await {
+            match RenderEngine::new(window, event_loop_proxy.clone()).await {
                 Ok(render_engine) => {
                     if let Err(_) = sender.send(render_engine) {
                         log::error!("Unable to use render engine: sender expired");
@@ -163,7 +168,6 @@ impl ApplicationHandler<ApplicationEvent> for Application {
             // wgpu engine gets initialized (e.g. in the browser)
             match event {
                 WindowEvent::Resized(physical_size) => {
-                    log::info!("Resized event before engine created");
                     self.resized = Some(physical_size);
                 }
                 _ => (),
@@ -216,7 +220,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
 
                     if self.controllers.update(self.require_render, &mut self.data) {
                         engine.update(&mut self.data);
-                        match engine.render() {
+                        match engine.render(&self.data) {
                             Ok(_) => {}
                             // Reconfigure the surface if it's lost or outdated
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -279,6 +283,14 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                 } else {
                     false
                 }
+            }
+            ApplicationEvent::PeaksReady((location, peaks)) => {
+                self.data.peaks.insert(location, peaks);
+                true
+            }
+            ApplicationEvent::PeakLabelsReady((location, labels)) => {
+                self.data.peak_labels.insert(location, labels);
+                true
             }
         };
 

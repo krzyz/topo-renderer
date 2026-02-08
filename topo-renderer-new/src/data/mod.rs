@@ -1,7 +1,10 @@
 pub mod application_data;
 pub mod camera;
+pub mod peak;
 
 use winit::dpi::{PhysicalSize, Pixel};
+
+use crate::data::camera::Camera;
 
 pub fn pad_256(size: u32) -> u32 {
     ((size - 1) / 256 + 1) * 256
@@ -38,4 +41,10 @@ where
     fn from(value: winit::dpi::LogicalSize<T>) -> Self {
         (value.width, value.height).into()
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct DepthState {
+    pub size: Size<u32>,
+    pub camera: Camera,
 }

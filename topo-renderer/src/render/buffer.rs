@@ -1,3 +1,4 @@
+use wgpu::util::DeviceExt;
 use winit::event_loop::EventLoopProxy;
 
 use crate::{app::ApplicationEvent, data::DepthState};
@@ -27,6 +28,25 @@ impl Buffer {
             }),
             label,
             size,
+            usage,
+            mapped: false,
+        }
+    }
+
+    pub fn new_init(
+        device: &wgpu::Device,
+        label: &'static str,
+        data: &[u8],
+        usage: wgpu::BufferUsages,
+    ) -> Self {
+        Self {
+            raw: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: data,
+                usage,
+            }),
+            label,
+            size: data.len() as u64,
             usage,
             mapped: false,
         }

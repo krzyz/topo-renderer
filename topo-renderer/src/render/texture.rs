@@ -8,8 +8,9 @@ pub enum TextureType {
 pub struct Texture {
     texture: wgpu::Texture,
     view: TextureView,
-    sampler: Sampler,
+    sampler: Option<Sampler>,
     t_type: TextureType,
+    size: wgpu::Extent3d,
 }
 
 impl Texture {
@@ -23,12 +24,16 @@ impl Texture {
         &self.view
     }
 
-    pub fn get_sampler(&self) -> &Sampler {
+    pub fn get_sampler(&self) -> &Option<Sampler> {
         &self.sampler
     }
 
     pub fn get_t_type(&self) -> &TextureType {
         &self.t_type
+    }
+
+    pub fn get_size(&self) -> &wgpu::Extent3d {
+        &self.size
     }
 
     pub fn create_render_texture(
@@ -75,8 +80,9 @@ impl Texture {
         Self {
             texture,
             view,
-            sampler,
+            sampler: Some(sampler),
             t_type: TextureType::Render,
+            size,
         }
     }
 
@@ -113,8 +119,43 @@ impl Texture {
         Self {
             texture,
             view,
-            sampler,
+            sampler: Some(sampler),
             t_type: TextureType::Depth,
+            size,
+        }
+    }
+
+    pub fn create_height_map_texture(
+        device: &wgpu::Device,
+        (width, height): (u32, u32),
+        label: &str,
+    ) -> Self {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let desc = wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        Self {
+            texture,
+            view,
+            sampler: None,
+            t_type: TextureType::Depth,
+            size,
         }
     }
 }

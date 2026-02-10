@@ -9,12 +9,12 @@ pub struct Mesh {
     pub indices: Vec<u32>,
 }
 
-pub fn transform(h: f32, lambda_deg: f32, phi_deg: f32) -> Vec3 {
+pub fn transform(h: f32, longitude_deg: f32, latitude_deg: f32) -> Vec3 {
     let r = R0 + h;
-    let phi = phi_deg.to_radians();
-    let lambda = lambda_deg.to_radians();
-    let x = r * lambda.cos() * phi.cos();
-    let y = r * lambda.cos() * phi.sin();
-    let z = -r * lambda.sin();
+    let longitude = longitude_deg.to_radians();
+    let latitude = latitude_deg.to_radians();
+    let x = r * latitude.cos() * longitude.cos();
+    let y = r * latitude.cos() * longitude.sin();
+    let z = r * latitude.sin();
     Vec3::new(x, y, z)
 }

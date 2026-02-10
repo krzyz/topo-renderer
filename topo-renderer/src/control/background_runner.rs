@@ -2,12 +2,15 @@ use std::{collections::BTreeMap, fmt::Display, io::Cursor, sync::Arc};
 
 use bytes::{Buf, Bytes};
 use color_eyre::{
-    Report, Result,
-    eyre::{Context, OptionExt},
+    Result,
+    eyre::{Context, ContextCompat, OptionExt},
 };
 use futures::future::join_all;
-use geotiff::GeoTiff;
 use itertools::Itertools;
+use tiff::{
+    decoder::{Decoder, DecodingResult},
+    tags::Tag,
+};
 use tokio::{
     join, select,
     sync::broadcast,
@@ -20,10 +23,11 @@ use winit::event_loop::EventLoopProxy;
 
 use crate::{
     app::{ApplicationEvent, ApplicationSettings},
+    common::coordinate_transform::{CoordinateTransform, get_height_value_at},
     data::peak::Peak,
     render::{
-        data::PeakInstance, geometry::transform, render_buffer::RenderBuffer,
-        render_engine::RenderEvent, text_renderer::TextRenderer,
+        data::PeakInstance, geometry::transform, render_engine::RenderEvent,
+        text_renderer::TextRenderer,
     },
 };
 
@@ -98,40 +102,73 @@ pub struct BackgroundRunner {
 pub async fn fetch_terrain(
     location: GeoLocation,
     settings: &ApplicationSettings,
-) -> Result<Option<(GeoTiff, Vec<PeakInstance>)>> {
+) -> Result<(
+    Vec<PeakInstance>,
+    (DecodingResult, CoordinateTransform, (u32, u32)),
+)> {
+    log::info!("Fetching terrain");
     let (tiff_bytes, peaks_bytes) = join!(
         get_tiff_from_http(settings.backend_url.as_str(), location),
         get_peaks_from_http(settings.backend_url.as_str(), location),
     );
 
-    let geotiff = tiff_bytes?
-        .map(|response| GeoTiff::read(Cursor::new(response)))
+    let mut height_map_decoding_result = DecodingResult::F32(vec![]);
+
+    let mut decoder = Decoder::new(Cursor::new(
+        tiff_bytes?.wrap_err("Empty terrain map for location")?,
+    ))?;
+    let pixel_scale_data = decoder
+        .find_tag(Tag::ModelPixelScaleTag)?
+        .map(|value| value.into_f64_vec())
         .transpose()?;
+    let tie_points_data = decoder
+        .find_tag(Tag::ModelTiepointTag)?
+        .map(|value| value.into_f64_vec())
+        .transpose()?;
+    let model_transformation_data = decoder
+        .find_tag(Tag::ModelTransformationTag)?
+        .map(|value| value.into_f64_vec())
+        .transpose()?;
+
+    let coordinate_transform = CoordinateTransform::from_geo_tag_data(
+        pixel_scale_data,
+        tie_points_data,
+        model_transformation_data,
+    )?;
+
+    let _ = decoder.read_image_to_buffer(&mut height_map_decoding_result);
+    let size = decoder.dimensions()?;
 
     let peaks = peaks_bytes?
         .map(|response| Peak::read_peaks(response.reader()))
         .transpose()?;
 
-    let peaks = geotiff.as_ref().and_then(|geotiff| {
-        peaks.map(|peaks| {
-            peaks
-                .into_iter()
-                .sorted_by(|a, b| {
-                    PartialOrd::partial_cmp(&b.elevation, &a.elevation)
-                        .unwrap_or(std::cmp::Ordering::Less)
+    let peaks = peaks.map(|peaks| {
+        peaks
+            .into_iter()
+            .sorted_by(|a, b| {
+                PartialOrd::partial_cmp(&b.elevation, &a.elevation)
+                    .unwrap_or(std::cmp::Ordering::Less)
+            })
+            .filter_map(|p| {
+                get_height_value_at(
+                    &height_map_decoding_result,
+                    &coordinate_transform,
+                    size,
+                    p.longitude as f64,
+                    p.latitude as f64,
+                )
+                .map(|h: f32| {
+                    PeakInstance::new(transform(h + 10.0, p.longitude, p.latitude), p.name)
                 })
-                .filter_map(|p| {
-                    geotiff
-                        .get_value_at(&(p.longitude as f64, p.latitude as f64).into(), 0)
-                        .map(|h: f32| {
-                            PeakInstance::new(transform(h + 10.0, p.latitude, p.longitude), p.name)
-                        })
-                })
-                .collect::<Vec<_>>()
-        })
+            })
+            .collect::<Vec<_>>()
     });
 
-    Ok(geotiff.zip(peaks))
+    Ok((
+        peaks.unwrap_or(vec![]),
+        (height_map_decoding_result, coordinate_transform, size),
+    ))
 }
 
 async fn get_tiff_from_http(backend_url: &str, location: GeoLocation) -> Result<Option<Bytes>> {
@@ -193,62 +230,40 @@ impl BackgroundRunner {
                 requested,
                 current_location,
             } => {
-                let (terrain, peaks) = fetch_terrain(requested, &settings).await?.unzip();
+                let (peaks, (terrain, coordinate_transform, size)) =
+                    fetch_terrain(requested, &settings).await?;
 
-                if let Some(peaks) = peaks.clone() {
-                    let _ = render_event_loopback
-                        .send_event(ApplicationEvent::PeaksReady((requested, peaks)));
+                if GeoLocation::from(current_location) == requested {
+                    let height = get_height_value_at(
+                        &terrain,
+                        &coordinate_transform,
+                        size,
+                        current_location.longitude as f64,
+                        current_location.latitude as f64,
+                    )
+                    .ok_or_eyre("Unable to get current location's height from the height map")?;
+
+                    let _ = render_event_loopback.send_event(ApplicationEvent::RenderEvent(
+                        RenderEvent::ResetCamera(current_location, height),
+                    ));
                 }
 
-                let process_terrain = {
-                    let render_event_loopback = render_event_loopback.clone();
-                    move || {
-                        let (vertices, indices) = if let Some(terrain) = terrain {
-                            if GeoLocation::from(current_location) == requested {
-                                let height: f32 = terrain
-                                .get_value_at(&(<(f64, f64)>::from(current_location)).into(), 0)
-                                .ok_or_eyre(
-                                    "Center coordinates not found in the expected geotiff chunk",
-                                )?;
-
-                                let _ = render_event_loopback.send_event(
-                                    ApplicationEvent::RenderEvent(RenderEvent::ResetCamera(
-                                        current_location,
-                                        height + 10.0,
-                                    )),
-                                );
-                            }
-                            RenderBuffer::process_terrain(&terrain)?
-                        } else {
-                            log::debug!("Processing empty terrain");
-                            RenderBuffer::process_empty_terrain(requested)?
-                        };
-
-                        Ok::<_, Report>((vertices, indices))
-                    }
-                };
+                let _ = render_event_loopback
+                    .send_event(ApplicationEvent::PeaksReady((requested, peaks.clone())));
 
                 let process_peaks = {
                     let render_event_loopback = render_event_loopback.clone();
                     move || {
-                        if let Some(peaks) = peaks {
-                            let labels = TextRenderer::prepare_peak_labels(&peaks);
-                            let _ = render_event_loopback
-                                .send_event(ApplicationEvent::PeakLabelsReady((requested, labels)));
-                        } else {
-                            // do nothing
-                        }
+                        let labels = TextRenderer::prepare_peak_labels(&peaks);
+                        let _ = render_event_loopback
+                            .send_event(ApplicationEvent::PeakLabelsReady((requested, labels)));
                     }
                 };
 
-                let (process_terrain_result, _) = join!(
-                    spawn_blocking(process_terrain),
-                    spawn_blocking(process_peaks)
-                );
+                let _ = spawn_blocking(process_peaks).await;
 
-                let (vertices, indices) = process_terrain_result??;
                 let _ = render_event_loopback.send_event(ApplicationEvent::RenderEvent(
-                    RenderEvent::TerrainReady(requested, vertices, indices),
+                    RenderEvent::TerrainReady(requested, terrain, coordinate_transform, size),
                 ));
 
                 Ok(())

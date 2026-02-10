@@ -1,24 +1,24 @@
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 
-use crate::data::{Size, camera::Camera};
+use crate::{
+    common::coordinate_transform::CoordinateTransform,
+    data::{Size, camera::Camera},
+};
 
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
-    pub position: Vec3,
-    pub normal: Vec3,
+    pub position: [u32; 2],
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
+    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![
         // position
-        0 => Float32x3,
-        // normal
-        1 => Float32x3
+        0 => Uint32x2,
     ];
 
-    pub fn new(position: Vec3, normal: Vec3) -> Self {
-        Self { position, normal }
+    pub fn new((x, y): (u32, u32)) -> Self {
+        Self { position: [x, y] }
     }
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -106,6 +106,35 @@ impl PeakInstance {
             position,
             name,
             visible: false,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct TerrainUniforms {
+    raster_point: Vec2,
+    model_point: Vec2,
+    pixel_scale: Vec2,
+    size: Vec2,
+}
+
+impl TerrainUniforms {
+    pub fn new(coordinate_transform: CoordinateTransform, (width, height): (u32, u32)) -> Self {
+        Self {
+            raster_point: Vec2::new(
+                coordinate_transform.raster_point.0,
+                coordinate_transform.raster_point.1,
+            ),
+            model_point: Vec2::new(
+                coordinate_transform.model_point.0,
+                coordinate_transform.model_point.1,
+            ),
+            pixel_scale: Vec2::new(
+                coordinate_transform.pixel_scale.0,
+                coordinate_transform.pixel_scale.1,
+            ),
+            size: Vec2::new(width as f32, height as f32),
         }
     }
 }

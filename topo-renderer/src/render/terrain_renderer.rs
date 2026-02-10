@@ -3,20 +3,19 @@ use std::collections::BTreeMap;
 use topo_common::GeoLocation;
 use wgpu::RenderPass;
 
-use crate::data::{Size, pad_256};
+use crate::{
+    common::coordinate_transform::CoordinateTransform,
+    data::{Size, pad_256},
+    render::pipeline::TerrainRenderPipeline,
+};
 
 use super::{
-    bound_texture_view::BoundTextureView,
-    buffer::Buffer,
-    data::PostprocessingUniforms,
-    data::{Uniforms, Vertex},
-    pipeline::Pipeline,
-    render_buffer::RenderBuffer,
-    texture::Texture,
+    bound_texture_view::BoundTextureView, buffer::Buffer, data::PostprocessingUniforms,
+    data::Uniforms, pipeline::Pipeline, render_buffer::RenderBuffer, texture::Texture,
 };
 
 pub struct TerrainRenderer {
-    first_pass_pipeline: Pipeline,
+    first_pass_pipeline: TerrainRenderPipeline,
     postprocessing_pipeline: Pipeline,
     texture_view: BoundTextureView,
     postprocessing_depth_texture_view: BoundTextureView,
@@ -28,7 +27,7 @@ pub struct TerrainRenderer {
 
 impl TerrainRenderer {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, target_size: Size<u32>) -> Self {
-        let first_pass_pipeline = Pipeline::create_first_pass_pipeline(device, format);
+        let first_pass_pipeline = TerrainRenderPipeline::new(device, format);
 
         let texture_view = Self::create_texture_view(device, format, target_size);
         let postprocessing_depth_texture_view =
@@ -152,7 +151,7 @@ impl TerrainRenderer {
         self.update_texture_view(device, self.format, target_size);
 
         queue.write_buffer(
-            self.first_pass_pipeline.get_uniforms(),
+            self.first_pass_pipeline.get_pipeline().get_uniforms(),
             0,
             bytemuck::bytes_of(uniforms),
         );
@@ -168,12 +167,18 @@ impl TerrainRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         location: GeoLocation,
-        vertices: &Vec<Vertex>,
-        indices: &Vec<u32>,
+        height_map_data: &[u8],
+        coordinate_transform: CoordinateTransform,
+        size: (u32, u32),
     ) {
-        let mut render_buffer = RenderBuffer::new(device);
-
-        render_buffer.add_terrain(device, queue, vertices, indices);
+        let render_buffer = RenderBuffer::new(
+            device,
+            queue,
+            size,
+            height_map_data,
+            coordinate_transform,
+            &self.first_pass_pipeline,
+        );
 
         self.render_buffers.insert(location, render_buffer);
     }
@@ -219,12 +224,10 @@ impl TerrainRenderer {
                     multiview_mask: None,
                 });
 
-                render_pass.set_pipeline(self.first_pass_pipeline.get_pipeline());
-                render_pass.set_bind_group(
-                    0,
-                    self.first_pass_pipeline.get_uniform_bind_group(),
-                    &[],
-                );
+                let pipeline = self.first_pass_pipeline.get_pipeline();
+
+                render_pass.set_pipeline(pipeline.get_pipeline());
+                render_pass.set_bind_group(0, pipeline.get_uniform_bind_group(), &[]);
 
                 self.render_buffers.iter().for_each(|(_, render_buffer)| {
                     render_pass.set_vertex_buffer(0, render_buffer.get_vertices().raw.slice(..));
@@ -232,8 +235,13 @@ impl TerrainRenderer {
                         render_buffer.get_indices().raw.slice(..),
                         wgpu::IndexFormat::Uint32,
                     );
+                    render_pass.set_bind_group(
+                        1,
+                        render_buffer.get_height_map_texture_bind_group(),
+                        &[],
+                    );
 
-                    render_pass.draw_indexed(render_buffer.get_terrain_range(), 0, 0..1);
+                    render_pass.draw_indexed(0..(render_buffer.get_indices_len() as u32), 0, 0..1);
                 });
             }
 

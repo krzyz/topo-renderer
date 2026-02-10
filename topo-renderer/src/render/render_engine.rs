@@ -4,15 +4,17 @@ use bytes::Buf;
 use color_eyre::Result;
 use glam::Mat4;
 use itertools::Itertools;
+use tiff::decoder::DecodingResult;
 use topo_common::{GeoCoord, GeoLocation};
 use wgpu::{BufferView, TexelCopyBufferInfo, TexelCopyBufferLayout};
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
 use crate::{
     app::ApplicationEvent,
+    common::coordinate_transform::CoordinateTransform,
     data::{DepthState, Size, application_data::ApplicationData, camera::dist_from_depth, pad_256},
     render::{
-        data::{PeakInstance, Uniforms, Vertex},
+        data::{PeakInstance, Uniforms},
         text_renderer::LabelId,
     },
 };
@@ -20,7 +22,7 @@ use crate::{
 use super::application_renderers::ApplicationRenderers;
 
 pub enum RenderEvent {
-    TerrainReady(GeoLocation, Vec<Vertex>, Vec<u32>),
+    TerrainReady(GeoLocation, DecodingResult, CoordinateTransform, (u32, u32)),
     DepthBufferReady(DepthState),
     FrameFinished(DepthState),
     ResetCamera(GeoCoord, f32),
@@ -266,13 +268,14 @@ impl RenderEngine {
     pub fn process_event(&mut self, event: RenderEvent, data: &mut ApplicationData) -> bool {
         use RenderEvent::*;
         match event {
-            TerrainReady(location, vertices, indices) => {
+            TerrainReady(location, mut height_map_data, coordinate_transform, size) => {
                 self.renderers.terrain.add_terrain(
                     &self.device,
                     &self.queue,
                     location,
-                    &vertices,
-                    &indices,
+                    height_map_data.as_buffer(0).as_bytes(),
+                    coordinate_transform,
+                    size,
                 );
                 data.loaded_locations.insert(location);
             }
@@ -316,7 +319,7 @@ impl RenderEngine {
                     .map(self.event_loop_proxy.clone(), depth_state);
             }
             ResetCamera(current_location, height) => {
-                data.camera.reset(current_location, height + 10.0);
+                data.camera.reset(current_location, height);
                 data.uniforms = Uniforms::new(&data.camera, self.bounds());
             }
         }

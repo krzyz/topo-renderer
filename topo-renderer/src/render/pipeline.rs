@@ -120,8 +120,15 @@ impl Pipeline {
             uniform_bind_group: postprocessing_uniform_bind_group,
         }
     }
+}
 
-    pub fn create_first_pass_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+pub struct TerrainRenderPipeline {
+    pipeline: Pipeline,
+    height_map_bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl TerrainRenderPipeline {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("uniform buffer"),
             size: std::mem::size_of::<Uniforms>() as u64,
@@ -144,6 +151,33 @@ impl Pipeline {
                 }],
             });
 
+        let height_map_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("height map group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("uniform bind group"),
             layout: &uniform_bind_group_layout,
@@ -156,7 +190,7 @@ impl Pipeline {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&uniform_bind_group_layout],
+                bind_group_layouts: &[&uniform_bind_group_layout, &height_map_bind_group_layout],
                 immediate_size: 0,
             });
 
@@ -174,14 +208,8 @@ impl Pipeline {
                 buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
-            /*
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
-                ..Default::default()
-            },
-            */
-            primitive: wgpu::PrimitiveState {
-                front_face: wgpu::FrontFace::Cw,
+                front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
             },
@@ -211,10 +239,23 @@ impl Pipeline {
             cache: None,
         });
 
-        Self {
+        let pipeline = Pipeline {
             pipeline: render_pipeline,
             uniforms,
             uniform_bind_group,
+        };
+
+        Self {
+            pipeline,
+            height_map_bind_group_layout,
         }
+    }
+
+    pub fn get_height_map_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.height_map_bind_group_layout
+    }
+
+    pub fn get_pipeline(&self) -> &Pipeline {
+        &self.pipeline
     }
 }

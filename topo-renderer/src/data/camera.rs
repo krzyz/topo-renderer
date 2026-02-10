@@ -85,7 +85,7 @@ impl Camera {
     pub const DEFAULT_POSITION: Vec3 = vec3(0.0, 0.0, 0.0);
 
     pub fn reset(&mut self, coord: GeoCoord, height: f32) {
-        self.eye = transform(height, coord.latitude, coord.longitude);
+        self.eye = transform(height, coord.longitude, coord.latitude);
     }
 
     pub fn up(&self) -> Vec3 {

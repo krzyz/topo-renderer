@@ -73,7 +73,12 @@ impl BoundTextureView {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2 * i + 1,
-                        resource: wgpu::BindingResource::Sampler(texture.get_sampler()),
+                        resource: wgpu::BindingResource::Sampler(
+                            texture
+                                .get_sampler()
+                                .as_ref()
+                                .expect("Texture without a sampler used where sampler is expected"),
+                        ),
                     },
                 ]
             })

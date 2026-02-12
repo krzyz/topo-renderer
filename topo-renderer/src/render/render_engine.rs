@@ -25,6 +25,7 @@ pub enum RenderEvent {
     TerrainReady(GeoLocation, DecodingResult, CoordinateTransform, (u32, u32)),
     DepthBufferReady(DepthState),
     FrameFinished(DepthState),
+    NormalsComputed(GeoLocation),
     ResetCamera(GeoCoord, f32),
 }
 
@@ -279,6 +280,7 @@ impl RenderEngine {
                     height_map_data.as_buffer(0).as_bytes(),
                     coordinate_transform,
                     size,
+                    self.event_loop_proxy.clone(),
                 );
                 data.loaded_locations.insert(location);
             }
@@ -324,6 +326,30 @@ impl RenderEngine {
             ResetCamera(current_location, height) => {
                 data.camera.reset(current_location, height);
                 data.uniforms = Uniforms::new(&data.camera, self.bounds());
+            }
+            NormalsComputed(location) => {
+                match self
+                    .renderers
+                    .terrain
+                    .get_render_buffer_mut_with_pipeline(&location)
+                {
+                    Some((render_buffer, pipeline)) => {
+                        if let Err(err) =
+                            render_buffer.switch_to_computed_normals(&self.device, pipeline)
+                        {
+                            log::error!(
+                                "Error when switching to calculated normals for location latitude {}, longitude {}: {err:?}",
+                                location.latitude,
+                                location.longitude
+                            );
+                        }
+                    }
+                    None => {
+                        log::debug!(
+                            "Trying to switch to calculated normals for render buffer that doesn't exist; It might have been unloaded during calculation"
+                        );
+                    }
+                }
             }
         }
 

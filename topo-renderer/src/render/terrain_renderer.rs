@@ -2,11 +2,13 @@ use std::collections::BTreeMap;
 
 use topo_common::GeoLocation;
 use wgpu::RenderPass;
+use winit::event_loop::EventLoopProxy;
 
 use crate::{
+    app::ApplicationEvent,
     common::coordinate_transform::CoordinateTransform,
     data::{Size, pad_256},
-    render::pipeline::TerrainRenderPipeline,
+    render::{compute_pipeline::ComputePipeline, pipeline::TerrainRenderPipeline},
 };
 
 use super::{
@@ -170,6 +172,7 @@ impl TerrainRenderer {
         height_map_data: &[u8],
         coordinate_transform: CoordinateTransform,
         size: (u32, u32),
+        event_loop_proxy: EventLoopProxy<ApplicationEvent>,
     ) {
         let render_buffer = RenderBuffer::new(
             device,
@@ -180,7 +183,34 @@ impl TerrainRenderer {
             &self.first_pass_pipeline,
         );
 
+        let compute_pipeline = ComputePipeline::new(device);
+        match render_buffer.get_terrain_bind_group() {
+            super::render_buffer::TerrainBindGroup::DummyNormals(normal_texture_resources) => {
+                compute_pipeline.dispatch(
+                    device,
+                    queue,
+                    location,
+                    render_buffer.get_height_map_texture(),
+                    normal_texture_resources,
+                    size,
+                    event_loop_proxy,
+                )
+            }
+            super::render_buffer::TerrainBindGroup::CalculatedNormals(_) => {
+                log::error!("Normals are initialized before initializing!");
+            }
+        }
+
         self.render_buffers.insert(location, render_buffer);
+    }
+
+    pub fn get_render_buffer_mut_with_pipeline(
+        &mut self,
+        location: &GeoLocation,
+    ) -> Option<(&mut RenderBuffer, &mut TerrainRenderPipeline)> {
+        self.render_buffers
+            .get_mut(&location)
+            .map(|buffer| (buffer, &mut self.first_pass_pipeline))
     }
 
     pub fn unload_terrain(&mut self, location: &GeoLocation) {

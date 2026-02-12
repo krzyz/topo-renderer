@@ -158,4 +158,42 @@ impl Texture {
             size,
         }
     }
+
+    pub fn create_normal_texture(
+        device: &wgpu::Device,
+        (width, height): (u32, u32),
+        usage: wgpu::TextureUsages,
+        label: &str,
+    ) -> Self {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            ..Default::default()
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        Self {
+            texture,
+            view,
+            sampler: Some(sampler),
+            t_type: TextureType::Depth,
+            size,
+        }
+    }
 }

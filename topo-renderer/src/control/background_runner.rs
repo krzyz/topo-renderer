@@ -106,7 +106,6 @@ pub async fn fetch_terrain(
     Vec<PeakInstance>,
     (DecodingResult, CoordinateTransform, (u32, u32)),
 )> {
-    log::info!("Fetching terrain");
     let (tiff_bytes, peaks_bytes) = join!(
         get_tiff_from_http(settings.backend_url.as_str(), location),
         get_peaks_from_http(settings.backend_url.as_str(), location),

@@ -1,6 +1,7 @@
 pub mod application_renderers;
 pub mod bound_texture_view;
 pub mod buffer;
+pub mod compute_pipeline;
 pub mod data;
 pub mod geometry;
 pub mod line_renderer;

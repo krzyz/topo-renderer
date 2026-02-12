@@ -17,8 +17,9 @@ struct TerrainUniforms {
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(1) @binding(0) var t_terrain: texture_2d<f32>;
-@group(1) @binding(1) var<uniform> terrain_uniforms: TerrainUniforms;
+@group(1) @binding(0) var terrain_heightmap: texture_2d<f32>;
+@group(1) @binding(1) var terrain_normals: texture_2d<f32>;
+@group(1) @binding(2) var<uniform> terrain_uniforms: TerrainUniforms;
 
 struct VertexInput {
     @location(0) position: vec2u,
@@ -49,7 +50,7 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    let height = textureLoad(t_terrain, raster.position, 0).r;
+    let height = textureLoad(terrain_heightmap, raster.position, 0).r;
     let model_position = to_model(raster, terrain_uniforms);
     let longitude= model_position.x * PI / 180.0;
     let latitude = model_position.y * PI / 180.0;
@@ -64,7 +65,7 @@ fn vs_main(
     
     out.color = vec3f(1.0, 1.0, 1.0);
     out.world_position = position;
-    out.world_normal = normalize(position);
+    out.world_normal = normalize(textureLoad(terrain_normals, raster.position, 0).rgb);
 
     out.clip_position = uniforms.projection * vec4f(position, 1.0);
     return out;

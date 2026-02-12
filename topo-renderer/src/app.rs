@@ -230,10 +230,11 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                         return;
                     }
 
+                    let _ = engine.poll();
                     if self.controllers.update(self.require_render, &mut self.data) {
                         engine.update(&mut self.data);
                         match engine.render(&self.data) {
-                            Ok(require_render) => self.require_render = require_render,
+                            Ok(_) => {}
                             // Reconfigure the surface if it's lost or outdated
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                                 self.surface_configured =

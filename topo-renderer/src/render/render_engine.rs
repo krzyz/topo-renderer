@@ -169,6 +169,11 @@ impl RenderEngine {
         }
     }
 
+    pub fn poll(&self) -> Result<()> {
+        self.device.poll(wgpu::PollType::Poll)?;
+        Ok(())
+    }
+
     pub fn update(&mut self, data: &mut ApplicationData) {
         let size: Size<u32> = self.size.into();
         data.uniforms = data
@@ -180,13 +185,13 @@ impl RenderEngine {
             self.size.into(),
             &data.uniforms,
             &data.postprocessing_uniforms,
-        )
+        );
     }
 
     pub fn render(
         &mut self,
         data: &ApplicationData,
-    ) -> std::result::Result<bool, wgpu::SurfaceError> {
+    ) -> std::result::Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.config.format),
@@ -210,12 +215,10 @@ impl RenderEngine {
             self.renderers.text.render(&mut pass);
         }
 
-        let processed_depth_different_than_current = self
-            .depth_state
-            .is_none_or(|depth_state| depth_state != self.new_depth_state(data));
-
         if !self.renderers.terrain.get_depth_read_buffer().mapped
-            && processed_depth_different_than_current
+            && self
+                .depth_state
+                .is_none_or(|depth_state| depth_state != self.new_depth_state(data))
         {
             copying_depth_texture = true;
             let depth_texture = self
@@ -261,7 +264,7 @@ impl RenderEngine {
             });
         }
 
-        Ok(processed_depth_different_than_current)
+        Ok(())
     }
 
     /// Returns whether scene changed and needs to be rerendered

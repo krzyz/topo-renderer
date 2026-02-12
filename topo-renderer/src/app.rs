@@ -252,6 +252,7 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                             }
                         }
                     }
+                    self.require_render = false;
                 }
                 WindowEvent::CloseRequested => event_loop.exit(),
                 _ => {}

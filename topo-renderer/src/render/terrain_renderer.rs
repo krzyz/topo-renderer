@@ -192,6 +192,7 @@ impl TerrainRenderer {
                     location,
                     render_buffer.get_height_map_texture(),
                     normal_texture_resources,
+                    render_buffer.get_uniforms(),
                     size,
                     event_loop_proxy,
                 )

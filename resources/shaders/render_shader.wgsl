@@ -1,4 +1,3 @@
-const PI = 3.14159265359;
 const R0 = 6371000.0;
 
 struct Uniforms {
@@ -14,6 +13,7 @@ struct TerrainUniforms {
     model_point: vec2f,
     pixel_scale: vec2f,
     size: vec2f,
+    normal_to_world_rotation: mat3x3f,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -52,8 +52,8 @@ fn vs_main(
 
     let height = textureLoad(terrain_heightmap, raster.position, 0).r;
     let model_position = to_model(raster, terrain_uniforms);
-    let longitude= model_position.x * PI / 180.0;
-    let latitude = model_position.y * PI / 180.0;
+    let longitude= radians(model_position.x);
+    let latitude = radians(model_position.y);
 
     let R = R0 + height;
 
@@ -65,7 +65,7 @@ fn vs_main(
     
     out.color = vec3f(1.0, 1.0, 1.0);
     out.world_position = position;
-    out.world_normal = normalize(textureLoad(terrain_normals, raster.position, 0).rgb);
+    out.world_normal = terrain_uniforms.normal_to_world_rotation * normalize(textureLoad(terrain_normals, raster.position, 0).rgb);
 
     out.clip_position = uniforms.projection * vec4f(position, 1.0);
     return out;

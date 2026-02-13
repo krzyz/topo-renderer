@@ -159,6 +159,10 @@ impl RenderBuffer {
         }
     }
 
+    pub fn get_uniforms(&self) -> &Buffer {
+        &self.uniforms
+    }
+
     pub fn switch_to_computed_normals(
         &mut self,
         device: &wgpu::Device,
@@ -245,14 +249,25 @@ fn generate_indices(size: (u32, u32)) -> Vec<u32> {
             (0..(size.1 - 1)).flat_map(move |j| {
                 let index = i * size.1 + j;
                 let index_next_row = (i + 1) * size.1 + j;
-                [
-                    index,
-                    index + 1,
-                    index_next_row + 1,
-                    index_next_row + 1,
-                    index_next_row,
-                    index,
-                ]
+                if (i + j) % 2 == 0 {
+                    [
+                        index,
+                        index + 1,
+                        index_next_row + 1,
+                        index_next_row + 1,
+                        index_next_row,
+                        index,
+                    ]
+                } else {
+                    [
+                        index,
+                        index + 1,
+                        index_next_row,
+                        index_next_row + 1,
+                        index_next_row,
+                        index + 1,
+                    ]
+                }
             })
         })
         .collect::<Vec<_>>()

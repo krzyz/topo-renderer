@@ -1,5 +1,22 @@
+const R0 = 6371000.0;
+
+struct TerrainUniforms {
+    raster_point: vec2f,
+    model_point: vec2f,
+    pixel_scale: vec2f,
+    size: vec2f,
+}
+
 @group(0) @binding(0) var terrain_heightmap: texture_2d<f32>;
 @group(0) @binding(1) var calculated_normals: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var<uniform> terrain_uniforms: TerrainUniforms;
+
+fn to_latitude(
+    position_y: i32,
+    transform: TerrainUniforms,
+) -> f32 {
+    return (f32(position_y) - transform.raster_point.y) * -transform.pixel_scale.y + transform.model_point.y;
+}
 
 @compute
 @workgroup_size(16, 16)
@@ -13,8 +30,10 @@ fn compute_normals(
         return;
     }
 
-    let x = 90.0;
-    let y = 90.0;
+    let latitude = to_latitude(coords.y, terrain_uniforms);
+
+    let x = radians(abs(terrain_uniforms.pixel_scale.x)) * R0;
+    let y = radians(abs(terrain_uniforms.pixel_scale.y)) * R0 * cos(radians(latitude));
 
     let center = vec3f(0, 0, textureLoad(terrain_heightmap, coords.xy, 0).r);
     let top_left = vec3f(-x, -y, textureLoad(terrain_heightmap, coords.xy + vec2i(-1, -1), 0).r);

@@ -3,7 +3,10 @@ use winit::event_loop::EventLoopProxy;
 
 use crate::{
     app::ApplicationEvent,
-    render::{render_buffer::NormalTextureResources, render_engine::RenderEvent, texture::Texture},
+    render::{
+        buffer::Buffer, render_buffer::NormalTextureResources, render_engine::RenderEvent,
+        texture::Texture,
+    },
 };
 
 pub struct ComputePipeline {
@@ -36,6 +39,7 @@ impl ComputePipeline {
         location: GeoLocation,
         heightmap_texture: &Texture,
         normal_texture_resources: &NormalTextureResources,
+        uniforms: &Buffer,
         (width, height): (u32, u32),
         event_loop_proxy: EventLoopProxy<ApplicationEvent>,
     ) {
@@ -52,6 +56,10 @@ impl ComputePipeline {
                     resource: wgpu::BindingResource::TextureView(
                         &normal_texture_resources.normal_texture.get_view(),
                     ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniforms.raw.as_entire_binding(),
                 },
             ],
         });

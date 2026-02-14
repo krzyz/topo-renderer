@@ -5,6 +5,7 @@ struct TerrainUniforms {
     model_point: vec2f,
     pixel_scale: vec2f,
     size: vec2f,
+    normal_to_world_rotation: mat3x3f,
 }
 
 @group(0) @binding(0) var terrain_heightmap: texture_2d<f32>;
@@ -27,6 +28,7 @@ fn compute_normals(
     let coords = vec2i(global_id.xy);
 
     if (coords.x >= dimensions.x - 1 || coords.y >= dimensions.y - 1 || coords.x < 1 || coords.y < 1) {
+        // todo: perform partial calculations for edges/corners
         return;
     }
 
@@ -54,7 +56,6 @@ fn compute_normals(
         + 0.5 * contribution(center, bottom_left, left);
 
     textureStore(calculated_normals, coords.xy, vec4f(normalize(normal), 0.0));
-    //textureStore(calculated_normals, coords.xy, vec4f(1.0, 1.0, 0.0, 0.0));
 }
 
 fn contribution(h0: vec3f, h1: vec3f, h2: vec3f) -> vec3f {

@@ -12,17 +12,6 @@ use super::{buffer::Buffer, data::Vertex};
 thread_local! {
     static VERTICES: OnceCell<Arc<Buffer>> = OnceCell::new();
     static INDICES: OnceCell<(Arc<Buffer>, usize)> = OnceCell::new();
-    static DUMMY_NORMALS: OnceCell<Arc<Texture>> = OnceCell::new();
-}
-
-pub struct NormalTextureResources {
-    pub normal_texture: Texture,
-    pub dummy_bind_group: wgpu::BindGroup,
-}
-
-pub enum TerrainBindGroup {
-    DummyNormals(NormalTextureResources),
-    CalculatedNormals(wgpu::BindGroup),
 }
 
 #[derive(Error, Debug)]
@@ -36,7 +25,8 @@ pub struct RenderBuffer {
     indices: Arc<Buffer>,
     indices_len: usize,
     height_map_texture: Texture,
-    height_map_texture_bind_group: TerrainBindGroup,
+    normal_texture: Texture,
+    height_map_texture_bind_group: wgpu::BindGroup,
     uniforms: Buffer,
 }
 
@@ -99,6 +89,8 @@ impl RenderBuffer {
             *height_map_texture.get_size(),
         );
 
+        let normal_texture = Self::create_normals_texture(device, (width, height));
+
         let uniforms = Buffer::new_init(
             device,
             "terrain uniform buffer",
@@ -106,26 +98,21 @@ impl RenderBuffer {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
 
-        let dummy_bind_group = Self::create_bind_group(
+        let height_map_texture_bind_group = Self::create_bind_group(
             device,
             pipeline,
             &height_map_texture,
-            &Self::create_dummy_normals(device),
+            &normal_texture,
             &uniforms,
         );
-
-        let height_map_texture_bind_group =
-            TerrainBindGroup::DummyNormals(NormalTextureResources {
-                normal_texture: Self::create_normals_texture(device, (width, height)),
-                dummy_bind_group,
-            });
 
         Self {
             vertices,
             indices,
             indices_len,
-            height_map_texture_bind_group,
             height_map_texture,
+            normal_texture,
+            height_map_texture_bind_group,
             uniforms,
         }
     }
@@ -146,58 +133,16 @@ impl RenderBuffer {
         &self.height_map_texture
     }
 
-    pub fn get_terrain_bind_group(&self) -> &TerrainBindGroup {
-        &self.height_map_texture_bind_group
+    pub fn get_normal_texture(&self) -> &Texture {
+        &self.normal_texture
     }
 
     pub fn get_height_map_texture_bind_group(&self) -> &wgpu::BindGroup {
-        match &self.height_map_texture_bind_group {
-            TerrainBindGroup::DummyNormals(normal_texture_resources) => {
-                &normal_texture_resources.dummy_bind_group
-            }
-            TerrainBindGroup::CalculatedNormals(bind_group) => bind_group,
-        }
+        &self.height_map_texture_bind_group
     }
 
     pub fn get_uniforms(&self) -> &Buffer {
         &self.uniforms
-    }
-
-    pub fn switch_to_computed_normals(
-        &mut self,
-        device: &wgpu::Device,
-        pipeline: &TerrainRenderPipeline,
-    ) -> Result<(), RenderBufferError> {
-        self.height_map_texture_bind_group = match &self.height_map_texture_bind_group {
-            TerrainBindGroup::DummyNormals(normal_texture_resources) => {
-                TerrainBindGroup::CalculatedNormals(Self::create_bind_group(
-                    device,
-                    pipeline,
-                    &self.height_map_texture,
-                    &normal_texture_resources.normal_texture,
-                    &self.uniforms,
-                ))
-            }
-            TerrainBindGroup::CalculatedNormals(_) => {
-                return Err(RenderBufferError::SwitchedToCalculatedNormalsTwice);
-            }
-        };
-
-        Ok(())
-    }
-
-    fn create_dummy_normals(device: &wgpu::Device) -> Arc<Texture> {
-        DUMMY_NORMALS.with(|cell| {
-            Arc::clone(cell.get_or_init(|| {
-                let normal_texture = Texture::create_normal_texture(
-                    device,
-                    (1, 1),
-                    wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-                    "dummy normal texture",
-                );
-                Arc::new(normal_texture)
-            }))
-        })
     }
 
     fn create_normals_texture(device: &wgpu::Device, size: (u32, u32)) -> Texture {

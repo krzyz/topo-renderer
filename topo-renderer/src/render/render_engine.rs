@@ -327,29 +327,8 @@ impl RenderEngine {
                 data.camera.reset(current_location, height);
                 data.uniforms = Uniforms::new(&data.camera, self.bounds());
             }
-            NormalsComputed(location) => {
-                match self
-                    .renderers
-                    .terrain
-                    .get_render_buffer_mut_with_pipeline(&location)
-                {
-                    Some((render_buffer, pipeline)) => {
-                        if let Err(err) =
-                            render_buffer.switch_to_computed_normals(&self.device, pipeline)
-                        {
-                            log::error!(
-                                "Error when switching to calculated normals for location latitude {}, longitude {}: {err:?}",
-                                location.latitude,
-                                location.longitude
-                            );
-                        }
-                    }
-                    None => {
-                        log::debug!(
-                            "Trying to switch to calculated normals for render buffer that doesn't exist; It might have been unloaded during calculation"
-                        );
-                    }
-                }
+            NormalsComputed(_) => {
+                log::debug!("Finished normal computation");
             }
         }
 

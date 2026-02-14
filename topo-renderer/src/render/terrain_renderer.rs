@@ -8,7 +8,13 @@ use crate::{
     app::ApplicationEvent,
     common::coordinate_transform::CoordinateTransform,
     data::{Size, pad_256},
-    render::{compute_pipeline::ComputePipeline, pipeline::TerrainRenderPipeline},
+    render::{
+        compute_pipeline::{
+            ComputeEdgePatchesOrientation, ComputePipeline, ComputePipelineCorner,
+            ComputePipelineEdge,
+        },
+        pipeline::TerrainRenderPipeline,
+    },
 };
 
 use super::{
@@ -184,22 +190,160 @@ impl TerrainRenderer {
         );
 
         let compute_pipeline = ComputePipeline::new(device);
-        match render_buffer.get_terrain_bind_group() {
-            super::render_buffer::TerrainBindGroup::DummyNormals(normal_texture_resources) => {
-                compute_pipeline.dispatch(
-                    device,
-                    queue,
-                    location,
-                    render_buffer.get_height_map_texture(),
-                    normal_texture_resources,
-                    render_buffer.get_uniforms(),
-                    size,
-                    event_loop_proxy,
-                )
-            }
-            super::render_buffer::TerrainBindGroup::CalculatedNormals(_) => {
-                log::error!("Normals are initialized before initializing!");
-            }
+        compute_pipeline.dispatch(
+            device,
+            queue,
+            location,
+            render_buffer.get_height_map_texture(),
+            render_buffer.get_normal_texture(),
+            render_buffer.get_uniforms(),
+            size,
+            event_loop_proxy.clone(),
+        );
+
+        let location_left =
+            GeoLocation::from_coord(location.latitude.degree, location.longitude.degree - 1);
+        let location_right =
+            GeoLocation::from_coord(location.latitude.degree, location.longitude.degree + 1);
+        let location_top =
+            GeoLocation::from_coord(location.latitude.degree + 1, location.longitude.degree);
+        let location_bottom =
+            GeoLocation::from_coord(location.latitude.degree - 1, location.longitude.degree);
+
+        let location_top_left =
+            GeoLocation::from_coord(location.latitude.degree + 1, location.longitude.degree - 1);
+        let location_top_right =
+            GeoLocation::from_coord(location.latitude.degree + 1, location.longitude.degree + 1);
+        let location_bottom_left =
+            GeoLocation::from_coord(location.latitude.degree - 1, location.longitude.degree - 1);
+        let location_bottom_right =
+            GeoLocation::from_coord(location.latitude.degree - 1, location.longitude.degree + 1);
+
+        let left_buffer = self.render_buffers.get(&location_left);
+        let right_buffer = self.render_buffers.get(&location_right);
+        let top_buffer = self.render_buffers.get(&location_top);
+        let bottom_buffer = self.render_buffers.get(&location_bottom);
+        let top_left_buffer = self.render_buffers.get(&location_top_left);
+        let top_right_buffer = self.render_buffers.get(&location_top_right);
+        let bottom_left_buffer = self.render_buffers.get(&location_bottom_left);
+        let bottom_right_buffer = self.render_buffers.get(&location_bottom_right);
+
+        let mut selected_buffers_edge = vec![];
+
+        if let Some(left_buffer) = left_buffer {
+            selected_buffers_edge.push((
+                left_buffer,
+                &render_buffer,
+                ComputeEdgePatchesOrientation::LeftRight,
+            ));
+        }
+
+        if let Some(right_buffer) = right_buffer {
+            selected_buffers_edge.push((
+                &render_buffer,
+                right_buffer,
+                ComputeEdgePatchesOrientation::LeftRight,
+            ));
+        }
+
+        if let Some(top_buffer) = top_buffer {
+            selected_buffers_edge.push((
+                top_buffer,
+                &render_buffer,
+                ComputeEdgePatchesOrientation::TopBottom,
+            ));
+        }
+        if let Some(bottom_buffer) = bottom_buffer {
+            selected_buffers_edge.push((
+                &render_buffer,
+                bottom_buffer,
+                ComputeEdgePatchesOrientation::TopBottom,
+            ));
+        }
+
+        for (lt_buffer, rb_buffer, orientation) in selected_buffers_edge {
+            let compute_pipeline_edge = ComputePipelineEdge::new(device, orientation);
+
+            compute_pipeline_edge.dispatch(
+                device,
+                queue,
+                location,
+                lt_buffer.get_height_map_texture(),
+                rb_buffer.get_height_map_texture(),
+                lt_buffer.get_normal_texture(),
+                rb_buffer.get_normal_texture(),
+                render_buffer.get_uniforms(),
+                size,
+                event_loop_proxy.clone(),
+            );
+        }
+
+        let mut selected_buffers_corner = vec![];
+
+        if let (Some(top_left_buffer), Some(top_buffer), Some(left_buffer)) =
+            (top_left_buffer, top_buffer, left_buffer)
+        {
+            selected_buffers_corner.push((
+                top_left_buffer,
+                top_buffer,
+                left_buffer,
+                &render_buffer,
+            ));
+        }
+
+        if let (Some(top_buffer), Some(top_right_buffer), Some(right_buffer)) =
+            (top_buffer, top_right_buffer, right_buffer)
+        {
+            selected_buffers_corner.push((
+                top_buffer,
+                top_right_buffer,
+                &render_buffer,
+                right_buffer,
+            ));
+        }
+
+        if let (Some(left_buffer), Some(bottom_left_buffer), Some(bottom_buffer)) =
+            (left_buffer, bottom_left_buffer, bottom_buffer)
+        {
+            selected_buffers_corner.push((
+                left_buffer,
+                &render_buffer,
+                bottom_left_buffer,
+                bottom_buffer,
+            ));
+        }
+
+        if let (Some(right_buffer), Some(bottom_buffer), Some(bottom_right_buffer)) =
+            (right_buffer, bottom_buffer, bottom_right_buffer)
+        {
+            selected_buffers_corner.push((
+                &render_buffer,
+                right_buffer,
+                bottom_buffer,
+                bottom_right_buffer,
+            ));
+        }
+
+        for (selected_top_left, selected_top_right, selected_bottom_left, selected_bottom_right) in
+            selected_buffers_corner
+        {
+            let compute_pipeline_corner = ComputePipelineCorner::new(device);
+
+            compute_pipeline_corner.dispatch(
+                device,
+                queue,
+                location,
+                selected_top_left.get_height_map_texture(),
+                selected_top_right.get_height_map_texture(),
+                selected_bottom_left.get_height_map_texture(),
+                selected_bottom_right.get_height_map_texture(),
+                selected_top_left.get_normal_texture(),
+                selected_top_right.get_normal_texture(),
+                selected_bottom_left.get_normal_texture(),
+                selected_bottom_right.get_normal_texture(),
+                render_buffer.get_uniforms(),
+                event_loop_proxy.clone(),
+            );
         }
 
         self.render_buffers.insert(location, render_buffer);

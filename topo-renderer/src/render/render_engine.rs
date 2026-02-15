@@ -324,7 +324,7 @@ impl RenderEngine {
                     .map(self.event_loop_proxy.clone(), depth_state);
             }
             ResetCamera(current_location, height) => {
-                data.camera.reset(current_location, height);
+                data.camera.reset(current_location, height + 50.0);
                 data.uniforms = Uniforms::new(&data.camera, self.bounds());
             }
             NormalsComputed(_) => {

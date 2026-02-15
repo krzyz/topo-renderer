@@ -96,7 +96,6 @@ fn lin2srgb(color: vec3f) -> vec3f {
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let ambient_strength = 0.01;
     let light_color = vec3f(1.0, 1.0, 1.0);
-    let light_position = vec3f(100000.0, 1000000.0, 150000.0);
 
     let diffuse_strength = 0.7 * max(dot(normalize(in.world_normal), uniforms.sun_direction), 0.0);
     let diffuse_color = light_color * diffuse_strength;

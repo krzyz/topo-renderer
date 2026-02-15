@@ -42,10 +42,10 @@ pub struct LightAngle {
 impl LightAngle {
     pub fn to_vec3(&self) -> glam::Vec3 {
         glam::Mat3::from_euler(
-            glam::EulerRot::XYZ,
-            PI * self.theta / 180.0,
-            PI * self.phi / 180.0,
+            glam::EulerRot::XYZEx,
+            (90.0 - self.phi).to_radians(),
             0.0,
+            self.theta.to_radians(),
         ) * glam::Vec3::Z
     }
 }
@@ -86,6 +86,10 @@ impl Camera {
 
     pub fn reset(&mut self, coord: GeoCoord, height: f32) {
         self.eye = transform(height, coord.longitude, coord.latitude);
+        self.sun_angle = LightAngle {
+            theta: coord.longitude,
+            phi: coord.latitude,
+        }
     }
 
     pub fn up(&self) -> Vec3 {

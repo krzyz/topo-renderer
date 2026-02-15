@@ -1,11 +1,10 @@
-use std::{collections::BTreeMap, fmt::Display, io::Cursor, sync::Arc};
+use std::{fmt::Display, io::Cursor, sync::Arc};
 
 use bytes::{Buf, Bytes};
 use color_eyre::{
     Result,
     eyre::{Context, ContextCompat, OptionExt},
 };
-use futures::future::join_all;
 use itertools::Itertools;
 use tiff::{
     decoder::{Decoder, DecodingResult},
@@ -37,7 +36,6 @@ pub enum BackgroundEvent {
         requested: GeoLocation,
         current_location: GeoCoord,
     },
-    LoadAdditionalFonts(BTreeMap<GeoLocation, Vec<PeakInstance>>),
 }
 
 impl BackgroundEvent {
@@ -60,7 +58,6 @@ impl Display for BackgroundEvent {
                 "Data requested for location {:?}, current location: {:?}",
                 requested, current_location
             ),
-            BackgroundEvent::LoadAdditionalFonts(_) => write!(f, "LoadAdditionalFonts"),
         }
     }
 }
@@ -250,6 +247,12 @@ impl BackgroundRunner {
                 let _ = render_event_loopback
                     .send_event(ApplicationEvent::PeaksReady((requested, peaks.clone())));
 
+                let peak_names_iter = peaks.iter().map(|peak| peak.name.as_str());
+
+                let _ =
+                    TextRenderer::load_additional_fonts(TextRenderer::get_scripts(peak_names_iter))
+                        .await?;
+
                 let process_peaks = {
                     let render_event_loopback = render_event_loopback.clone();
                     move || {
@@ -264,23 +267,6 @@ impl BackgroundRunner {
                 let _ = render_event_loopback.send_event(ApplicationEvent::RenderEvent(
                     RenderEvent::TerrainReady(requested, terrain, coordinate_transform, size),
                 ));
-
-                Ok(())
-            }
-            LoadAdditionalFonts(peaks) => {
-                let _ = TextRenderer::load_additional_fonts().await?;
-
-                let label_preparation_futures = peaks.into_iter().map(|(location, peaks)| {
-                    let render_event_loopback = render_event_loopback.clone();
-                    let prepare_peak_labels = move || {
-                        let labels = TextRenderer::prepare_peak_labels(&peaks);
-                        let _ = render_event_loopback
-                            .send_event(ApplicationEvent::PeakLabelsReady((location, labels)));
-                    };
-                    tokio::task::spawn_blocking(prepare_peak_labels)
-                });
-
-                join_all(label_preparation_futures).await;
 
                 Ok(())
             }

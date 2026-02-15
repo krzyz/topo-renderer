@@ -2,6 +2,7 @@ use crate::data::application_data::{ApplicationData, PeakLabel};
 use crate::render::data::PeakInstance;
 
 use color_eyre::eyre::Result;
+use futures::stream::FuturesUnordered;
 use glyphon::fontdb::{Database, Source};
 use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Shaping, SwashCache, TextArea, TextAtlas,
@@ -13,6 +14,7 @@ use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock, RwLock};
 use topo_common::GeoLocation;
+use unicode_script::{Script, UnicodeScript};
 use wgpu::MultisampleState;
 
 pub const LINE_HEIGHT: f32 = 16.0;
@@ -20,7 +22,30 @@ pub const LINE_PADDING: f32 = 4.0;
 pub const LABEL_PADDING_LEFT: f32 = 1.0;
 pub const MAX_ROWS: usize = 8;
 
-static FONTS: LazyLock<RwLock<Vec<Source>>> = LazyLock::new(|| RwLock::new(vec![]));
+static FONTS: LazyLock<RwLock<BTreeMap<&'static str, Source>>> =
+    LazyLock::new(|| RwLock::new(BTreeMap::new()));
+
+static FONT_SOURCE_MAP: LazyLock<BTreeMap<u32, Vec<&str>>> = LazyLock::new(|| {
+    let mut fonts = BTreeMap::new();
+    let cj = vec![
+        "https://fonts.gstatic.com/s/notosansjp/v54/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.ttf",
+        "https://fonts.gstatic.com/s/notosanssc/v38/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYw.ttf",
+    ];
+
+    fonts.insert(Script::Armenian.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosansarmenian/v47/ZgN0jOZKPa7CHqq0h37c7ReDUubm2SEdFXp7ig73qtTY5idb74R9UdM3y2nZLorxb50laSo.ttf"]);
+    fonts.insert(Script::Hebrew.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosanshebrew/v50/or3HQ7v33eiDljA1IufXTtVf7V6RvEEdhQlk0LlGxCyaeNKYZC0sqk3xXGiXd4qdpShh.ttf"]);
+    fonts.insert(Script::Arabic.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosansarabic/v29/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyvuw.ttf"]);
+    fonts.insert(Script::Bengali.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosansbengali/v33/Cn-SJsCGWQxOjaGwMQ6fIiMywrNJIky6nvd8BjzVMvJx2mcSPVFpVEqE-6KmsolLideu9g.ttf"]);
+    fonts.insert(Script::Tamil.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosanstamil/v31/ieVc2YdFI3GCY6SyQy1KfStzYKZgzN1z4LKDbeZce-0429tBManUktuex7vGo40WoqQ.ttf"]);
+    fonts.insert(Script::Thai.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosansthai/v29/iJWnBXeUZi_OHPqn4wq6hQ2_hbJ1xyN9wd43SofNWcd1MKVQt_So_9CdU5RtlzZ0RQ.ttf"]);
+    fonts.insert(Script::Georgian.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGj5dZE.ttf"]);
+    fonts.insert(Script::Hangul.as_iso15924_tag(), vec!["https://fonts.gstatic.com/s/notosanskr/v37/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLQ.ttf"]);
+    fonts.insert(Script::Katakana.as_iso15924_tag(), cj.clone());
+    fonts.insert(Script::Hiragana.as_iso15924_tag(), cj.clone());
+    fonts.insert(Script::Han.as_iso15924_tag(), cj.clone());
+
+    fonts
+});
 
 // each thread gets its own font system so background tasks/threads can
 // each provide &mut font system for glyphon methods
@@ -120,18 +145,51 @@ impl TextRenderer {
             .unwrap();
     }
 
-    pub async fn load_additional_fonts() -> Result<()> {
-        let font_urls = [
-            "https://fonts.gstatic.com/s/notosansarabic/v29/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyvuw.ttf",
-            "https://fonts.gstatic.com/s/notosansjp/v54/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.ttf",
-            "https://fonts.gstatic.com/s/notosanskr/v37/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLQ.ttf",
-            "https://fonts.gstatic.com/s/notosanssc/v38/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYw.ttf",
-        ];
+    pub fn get_scripts<'a>(texts: impl Iterator<Item = &'a str>) -> BTreeSet<u32> {
+        let mut scripts = BTreeSet::new();
 
-        for url in font_urls {
-            let font = Source::Binary(Arc::new(reqwest::get(url).await?.bytes().await?));
-            let mut fonts = FONTS.write().unwrap();
-            fonts.push(font);
+        for text in texts {
+            if let Some(char) = text.chars().next() {
+                scripts.insert(char.script().as_iso15924_tag());
+            }
+        }
+
+        scripts
+    }
+
+    pub async fn load_additional_fonts(scripts: BTreeSet<u32>) -> Result<()> {
+        let font_urls = {
+            let fonts = FONTS
+                .read()
+                .expect("Error accessing loaded fonts RwLockReadGuard");
+            scripts
+                .into_iter()
+                .flat_map(|s| {
+                    FONT_SOURCE_MAP
+                        .get(&s)
+                        .into_iter()
+                        .flat_map(|x| x.into_iter())
+                })
+                .copied()
+                .filter(|url| !fonts.contains_key(*url))
+                .collect::<BTreeSet<_>>()
+        };
+
+        let font_bytes_futures = font_urls
+            .into_iter()
+            .map(async |url| (url, reqwest::get(url).await.unwrap().bytes().await.unwrap()))
+            .map(|fut| Box::pin(fut))
+            .collect::<FuturesUnordered<_>>();
+
+        {
+            for font_bytes in font_bytes_futures.into_iter() {
+                let (url, font_bytes) = font_bytes.await;
+                let font = Source::Binary(Arc::new(font_bytes));
+                let mut fonts = FONTS
+                    .write()
+                    .expect("Error accessing loaded fonts RwLockWriteGuard");
+                fonts.insert(url, font);
+            }
         }
 
         Ok(())
@@ -147,8 +205,8 @@ impl TextRenderer {
             FONT_SYSTEM.with_borrow_mut(|font_system| {
                 let db = font_system.db_mut();
                 // extend thread local font system with new fonts loaded globally
-                for i in (db.len() - 1)..fonts.len() {
-                    db.load_font_source(fonts[i].clone());
+                for (_, font) in fonts.iter() {
+                    db.load_font_source(font.clone());
                 }
             })
         }

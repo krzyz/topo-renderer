@@ -80,10 +80,6 @@
       bottom: 0;
     }
 
-    .additionalFonts {
-      width: 50px;
-    }
-
     menu {
       padding-left: 0;
       margin-top: 0;
@@ -227,9 +223,6 @@
           the viewpoint, ctrl and move mouse to change the light direction. <br>
           Enter latitude+longitude (as numbers from -90 to 90 for S-N and -180
           to 180 for W-E) and press "Go" (or enter). <br>
-          Some peak labels might not render correctly, use "Load additional
-          fonts" to fetch additional fonts (Arabic, Chinese, Japanese, Korean)
-          from fonts.google.com
           <br>
           <br>
           <strong>Data sources:</strong>
@@ -281,13 +274,6 @@
                 <input type="submit" value="Go">
               </form>
             </li>
-            <li>
-              <input
-                id="additionalFonts"
-                type="button"
-                value="Load additional fonts"
-              >
-            </li>
           </menu>
         </div>
         <button>menu</button>
@@ -312,7 +298,7 @@
 
     <script type="module">
     import init from "./pkg/topo_renderer_web.js";
-    import { set_location, load_fonts } from "./pkg/topo_renderer_web.js";
+    import { set_location } from "./pkg/topo_renderer_web.js";
 
     async function run() {
       await init();
@@ -326,10 +312,6 @@
 
         set_location(formData.get("latitude"), formData.get("longitude"));
       });
-
-    document.getElementById("additionalFonts").onclick = function () {
-      load_fonts();
-    };
 
     document.getElementById("toast-close-btn").onclick = function () {
       var toast = document.getElementById("toast");

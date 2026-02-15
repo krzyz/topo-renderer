@@ -26,6 +26,7 @@ glyphon = "0.10.0"
 lyon = "1.0.16"
 tiff = "0.11.2"
 thiserror = "2.0.18"
+unicode-script = "0.5.8"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true }

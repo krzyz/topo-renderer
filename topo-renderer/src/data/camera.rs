@@ -43,8 +43,8 @@ impl LightAngle {
     pub fn to_vec3(&self) -> glam::Vec3 {
         glam::Mat3::from_euler(
             glam::EulerRot::XYZEx,
-            (90.0 - self.phi).to_radians(),
             0.0,
+            (90.0 - self.phi).to_radians(),
             self.theta.to_radians(),
         ) * glam::Vec3::Z
     }
@@ -68,7 +68,7 @@ impl Default for Camera {
             eye: Self::DEFAULT_POSITION,
             pitch: 0.0,
             yaw: 0.0,
-            fov_y: 45.0,
+            fov_y: 45f32.to_radians(),
             near: NEAR,
             far: FAR,
             view_mode: ViewMode::default(),

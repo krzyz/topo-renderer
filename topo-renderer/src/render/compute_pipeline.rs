@@ -118,7 +118,7 @@ impl ComputePipelineEdge {
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("compute normals pipeline"),
+            label: Some("compute normals edge pipeline"),
             layout: None,
             module: &compute_normals_shader,
             entry_point,
@@ -217,7 +217,7 @@ impl ComputePipelineCorner {
         )));
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("compute normals pipeline"),
+            label: Some("compute normals corner pipeline"),
             layout: None,
             module: &compute_normals_shader,
             entry_point: Some("compute_normals_corner"),
@@ -245,7 +245,7 @@ impl ComputePipelineCorner {
         event_loop_proxy: EventLoopProxy<ApplicationEvent>,
     ) {
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Compute normals edge texture bind group"),
+            label: Some("Compute normals corner texture bind group"),
             layout: &self.pipeline.get_bind_group_layout(0),
             entries: &[
                 wgpu::BindGroupEntry {

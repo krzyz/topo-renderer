@@ -5,7 +5,7 @@ struct TerrainUniforms {
     model_point: vec2f,
     pixel_scale: vec2f,
     size: vec2f,
-    normal_to_world_rotation: mat3x3f,
+    normal_to_world_rotation: mat4x4f,
 }
 
 @group(0) @binding(0) var terrain_heightmap: texture_2d<f32>;
@@ -34,33 +34,25 @@ fn compute_normals(
 
     let latitude = to_latitude(coords.y, terrain_uniforms);
 
-    let x = radians(abs(terrain_uniforms.pixel_scale.x)) * R0;
-    let y = radians(abs(terrain_uniforms.pixel_scale.y)) * R0 * cos(radians(latitude));
+    let x = radians(terrain_uniforms.pixel_scale.x) * R0;
+    let y = radians(terrain_uniforms.pixel_scale.y) * R0 * cos(radians(latitude));
 
-    let center = vec3f(0, 0, textureLoad(terrain_heightmap, coords.xy, 0).r);
-    let top_left = vec3f(-x, -y, textureLoad(terrain_heightmap, coords.xy + vec2i(-1, -1), 0).r);
-    let top = vec3f(0, -y, textureLoad(terrain_heightmap, coords.xy + vec2i(0, -1), 0).r);
-    let top_right = vec3f(x, -y, textureLoad(terrain_heightmap, coords.xy + vec2i(1, -1), 0).r);
-    let left = vec3f(x, 0, textureLoad(terrain_heightmap, coords.xy + vec2i(-1, 0), 0).r);
+    let top = vec3f(0, y, textureLoad(terrain_heightmap, coords.xy + vec2i(0, -1), 0).r);
+    let left = vec3f(-x, 0, textureLoad(terrain_heightmap, coords.xy + vec2i(-1, 0), 0).r);
     let right = vec3f(x, 0, textureLoad(terrain_heightmap, coords.xy + vec2i(1, 0), 0).r);
-    let bottom_left = vec3f(-x, y, textureLoad(terrain_heightmap, coords.xy + vec2i(-1, 1), 0).r);
-    let bottom = vec3f(0, y, textureLoad(terrain_heightmap, coords.xy + vec2i(0, 1), 0).r);
-    let bottom_right = vec3f(x, y, textureLoad(terrain_heightmap, coords.xy + vec2i(1, 1), 0).r);
+    let bottom = vec3f(0, -y, textureLoad(terrain_heightmap, coords.xy + vec2i(0, 1), 0).r);
 
-    let normal =
-        contribution(center, left, top)
-        + 0.5 * contribution(center, top, top_right)
-        + 0.5 * contribution(center, top_right, right)
-        + contribution(center, right, bottom_right)
-        + 0.5 * contribution(center, bottom, bottom_left)
-        + 0.5 * contribution(center, bottom_left, left);
+    var normal = normalize(calc_normal(left, right, top, bottom));
 
-    textureStore(calculated_normals, coords.xy, vec4f(normalize(normal), 0.0));
+    // convert from vector range (-1 to 1) to texture color range (0 to 1)
+    normal = 0.5 * (normal + vec3f(1));
+
+    textureStore(calculated_normals, coords.xy, vec4f(normal, 0.0));
 }
 
-fn contribution(h0: vec3f, h1: vec3f, h2: vec3f) -> vec3f {
-    let side1 = h1 - h0;
-    let side2 = h2 - h1;
+fn calc_normal(left: vec3f, right: vec3f, top: vec3f, bottom: vec3f) -> vec3f {
+    let x = right - left;
+    let y = top - bottom;
 
-    return cross(side1, side2);
+    return cross(x, y);
 }

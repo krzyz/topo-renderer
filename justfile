@@ -18,3 +18,11 @@ build-wasm:
 [working-directory: 'topo-renderer-web']
 serve-wasm:
     python3 ../web/serve.py
+
+[working-directory: 'topo-renderer-web']
+publish:
+    scp -r pkg/* nixcomplexity:/mnt/data1/topo/html/pkg
+
+[working-directory: 'topo-renderer-web']
+publish-staging:
+    scp -r {index.html,pkg} nixcomplexity:/mnt/data1/topo-staging/html/

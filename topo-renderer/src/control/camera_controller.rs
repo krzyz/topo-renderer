@@ -12,6 +12,9 @@ use winit::{
 
 use crate::data::camera::Camera;
 
+const MIN_FOV: f32 = 10.0;
+const MAX_FOV: f32 = 160.0;
+
 pub enum CameraControllerEvent {
     ToggleViewMode,
 }
@@ -172,11 +175,11 @@ impl CameraController {
         let mut changed = false;
         let increment = self.speed * 0.1 * time_delta.as_micros() as f32;
         if self.is_pressed(Control::Q) {
-            camera.set_fovy(camera.fov_y() - 0.001 * increment);
+            camera.set_fovy((camera.fov_y() - 0.001 * increment).max(MIN_FOV.to_radians()));
             changed = true;
         }
         if self.is_pressed(Control::E) {
-            camera.set_fovy(camera.fov_y() + 0.001 * increment);
+            camera.set_fovy((camera.fov_y() + 0.001 * increment).min(MAX_FOV.to_radians()));
             changed = true;
         }
         if self.is_pressed(Control::Up) {

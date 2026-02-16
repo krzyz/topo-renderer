@@ -13,7 +13,7 @@ struct TerrainUniforms {
     model_point: vec2f,
     pixel_scale: vec2f,
     size: vec2f,
-    normal_to_world_rotation: mat3x3f,
+    normal_to_world_rotation: mat4x4f,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -52,7 +52,7 @@ fn vs_main(
 
     let height = textureLoad(terrain_heightmap, raster.position, 0).r;
     let model_position = to_model(raster, terrain_uniforms);
-    let longitude= radians(model_position.x);
+    let longitude = radians(model_position.x);
     let latitude = radians(model_position.y);
 
     let R = R0 + height;
@@ -62,10 +62,11 @@ fn vs_main(
         R * cos(latitude) * sin(longitude),
         R * sin(latitude),
     );
-    
+
+    let normal = 2.0 * textureLoad(terrain_normals, raster.position, 0).rgb - vec3f(1);
     out.color = vec3f(1.0, 1.0, 1.0);
     out.world_position = position;
-    out.world_normal = terrain_uniforms.normal_to_world_rotation * normalize(textureLoad(terrain_normals, raster.position, 0).rgb);
+    out.world_normal = (terrain_uniforms.normal_to_world_rotation * vec4f(normal, 0.0)).xyz;
 
     out.clip_position = uniforms.projection * vec4f(position, 1.0);
     return out;
@@ -102,15 +103,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let ambient_color = light_color * ambient_strength;
     let result_lin = (ambient_color + diffuse_color) * in.color;
-    //let result_srgb = lin2srgb(result_lin);
-    let result = ditherRGB(result_lin, in.world_position.xy);
+    let result = ditherRGB(result_lin, in.clip_position.xy + uniforms.camera_pos.xy - in.world_position.xy);
 
     if uniforms.view_mode == 2 {
-        return vec4f(in.world_normal, 1.0);
-        //return vec4f(result_lin, 1.0);
+        return vec4f(0.5 * (in.world_normal + vec3f(1)), 1.0);
     } else if uniforms.view_mode == 1 {
-        return vec4f(1.0, 1.0, 1.0, 1.0);
-        //return vec4f(result_srgb, 1.0);
+        return vec4f(result_lin, 1.0);
     } else {
         return vec4f(result, 1.0);
     }

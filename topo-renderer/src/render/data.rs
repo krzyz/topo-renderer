@@ -117,8 +117,7 @@ pub struct TerrainUniforms {
     model_point: Vec2,
     pixel_scale: Vec2,
     size: Vec2,
-    normal_to_world_rot: Mat3,
-    padding: Vec3,
+    normal_to_world_rot: Mat4,
 }
 
 impl TerrainUniforms {
@@ -126,12 +125,12 @@ impl TerrainUniforms {
         let latitude = coordinate_transform.model_point.1;
         let longitude = coordinate_transform.model_point.0;
 
-        let normal_to_world_rot = Mat3::from_euler(
+        let normal_to_world_rot = Mat4::from_mat3(Mat3::from_euler(
             glam::EulerRot::XYZEx,
-            (90.0 - latitude).to_radians(),
             0.0,
+            (90.0 - latitude).to_radians(),
             (longitude).to_radians(),
-        );
+        ));
 
         Self {
             raster_point: Vec2::new(
@@ -148,7 +147,6 @@ impl TerrainUniforms {
             ),
             size: Vec2::new(width as f32, height as f32),
             normal_to_world_rot,
-            padding: Vec3::ZERO,
         }
     }
 }

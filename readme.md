@@ -6,7 +6,7 @@ A simple hobby project to display vistas/panorama from any place of the world us
 
 See at [https://topo.realcomplexity.com](https://topo.realcomplexity.com)
 
-![topo](https://github.com/user-attachments/assets/59c86d1d-6e3d-4249-b420-707fa7120f65)
+![topo](https://github.com/user-attachments/assets/4a38478f-0e91-4512-8bfe-ad41ff0e538c)
 
 # Development
 
@@ -24,7 +24,7 @@ The project settings need to be set in `Settings.toml` file (best placed in the 
 
 ## Running desktop version
 
-`just run`
+`just desktop` or `just desktop-debug`
 
 ## Running wasm version
 

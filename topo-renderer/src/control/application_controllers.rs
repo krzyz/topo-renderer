@@ -106,14 +106,19 @@ impl ApplicationControllers {
         self.camera_controller.process_device_events(event)
     }
 
-    pub fn update(&mut self, require_render: bool, data: &mut ApplicationData) -> bool {
+    pub fn update(
+        &mut self,
+        require_render: bool,
+        data: &mut ApplicationData,
+        size: (u32, u32),
+    ) -> bool {
         let current_instant = Instant::now();
         let time_delta = current_instant - self.previous_instant;
         self.previous_instant = current_instant;
 
-        let camera_changed = self
-            .camera_controller
-            .update_camera(&mut data.camera, time_delta);
+        let camera_changed =
+            self.camera_controller
+                .update_camera(&mut data.camera, size, time_delta);
         require_render || camera_changed
     }
 }

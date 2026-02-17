@@ -6,6 +6,8 @@ use crate::render::geometry::transform;
 
 pub const NEAR: f32 = 50.0;
 pub const FAR: f32 = 500000.0;
+const MIN_FOV: f32 = 10.0_f32.to_radians();
+const MAX_FOV: f32 = 160.0_f32.to_radians();
 
 pub fn dist_from_depth(depth: f32) -> f32 {
     FAR * NEAR / (FAR - depth * (FAR - NEAR))
@@ -149,8 +151,12 @@ impl Camera {
         self.pitch = pitch;
     }
 
+    pub fn get_fovy(&self) -> f32 {
+        self.fov_y
+    }
+
     pub fn set_fovy(&mut self, fov: f32) {
-        self.fov_y = fov;
+        self.fov_y = fov.max(MIN_FOV).min(MAX_FOV);
     }
 
     pub fn rotate_yaw(&mut self, clockwise_rotation: f32) {

@@ -229,7 +229,11 @@ impl ApplicationHandler<ApplicationEvent> for Application {
                     }
 
                     let _ = engine.poll();
-                    if self.controllers.update(self.require_render, &mut self.data) {
+                    if self.controllers.update(
+                        self.require_render,
+                        &mut self.data,
+                        engine.size().into(),
+                    ) {
                         engine.update(&mut self.data);
                         match engine.render(&self.data) {
                             Ok(_) => {}
